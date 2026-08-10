@@ -88,6 +88,13 @@ Make sure you have a working internet connection. The script downloads dependenc
 2. Check that Ollama is running (look for the Ollama icon in your system tray)
 3. Make sure you've pulled a model: `ollama pull deepseek-r1`
 
+### Antigravity shows a black or blank screen after running repatch.bat
+Right-click **`RESTORE_IF_BLACK_SCREEN.bat`** → **Run as administrator**. It reverts to
+the last known-good version automatically, no download needed. Once Antigravity opens
+normally again, run `repatch.bat` to turn custom models back on. If it still won't
+open after that, the script will tell you to uninstall and reinstall Antigravity fresh —
+your custom models and API keys are stored separately and won't be lost either way.
+
 ### "Access denied" errors
 Right-click `repatch.bat` and select **"Run as administrator"**.
 
@@ -101,6 +108,7 @@ The proxy auto-falls back to a random port. This is handled automatically.
 | File | What it does |
 |------|-------------|
 | `repatch.bat` | **One-click installer** — double-click this |
+| `RESTORE_IF_BLACK_SCREEN.bat` | Emergency recovery if Antigravity won't open after patching |
 | `deploy.ps1` | Deploys the patch to Antigravity (called by repatch.bat) |
 | `custom_models.json` | Template with pre-configured local models |
 | `src/` | TypeScript source code for the patch |
