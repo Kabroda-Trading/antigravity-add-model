@@ -23,13 +23,31 @@ $CustomModelsDest = "$env:USERPROFILE\.gemini\antigravity\custom_models.json"
 $LsBinary = "$env:LOCALAPPDATA\Programs\antigravity\resources\bin\language_server.exe"
 
 # 3. Backup existing asar
+# P3-01: Version guard. A backup taken before an Antigravity auto-update is not
+# safe to reuse forever - repacking app.asar from a stale backup while the rest
+# of the install (language_server.exe, Electron runtime files) is newer causes
+# a version mismatch that can black-screen the app. Track the Antigravity.exe
+# file version alongside the backup and force a fresh backup whenever it changes.
 Write-Host "[2/6] Backing up app.asar..." -ForegroundColor Yellow
+$VersionMarker = "$BackupAsar.version"
+$AntigravityExe = "$env:LOCALAPPDATA\Programs\antigravity\Antigravity.exe"
+$CurrentVersion = $null
+if (Test-Path $AntigravityExe) {
+    $CurrentVersion = (Get-Item $AntigravityExe).VersionInfo.FileVersion
+}
+$BackedUpVersion = if (Test-Path $VersionMarker) { (Get-Content $VersionMarker -Raw).Trim() } else { $null }
+$BackupIsStale = (Test-Path $BackupAsar) -and $CurrentVersion -and ($CurrentVersion -ne $BackedUpVersion)
+
 if (Test-Path $AsarPath) {
-    if (-not (Test-Path $BackupAsar)) {
+    if ((-not (Test-Path $BackupAsar)) -or $BackupIsStale) {
+        if ($BackupIsStale) {
+            Write-Host "   Antigravity updated (backup v$BackedUpVersion, now v$CurrentVersion) - refreshing backup..." -ForegroundColor Yellow
+        }
         Copy-Item $AsarPath $BackupAsar -Force
-        Write-Host "   Backup created: $BackupAsar" -ForegroundColor Green
+        if ($CurrentVersion) { Set-Content -Path $VersionMarker -Value $CurrentVersion -NoNewline }
+        Write-Host "   Backup created: $BackupAsar (v$CurrentVersion)" -ForegroundColor Green
     } else {
-        Write-Host "   Backup already exists" -ForegroundColor Green
+        Write-Host "   Backup already exists (v$BackedUpVersion)" -ForegroundColor Green
     }
 } else {
     Write-Host "   ERROR: app.asar not found at $AsarPath" -ForegroundColor Red
