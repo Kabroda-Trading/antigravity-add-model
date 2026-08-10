@@ -40,6 +40,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.normalizeToolName = normalizeToolName;
 exports.normalizeToolArgs = normalizeToolArgs;
 exports.fixParamTypes = fixParamTypes;
 exports.translateToolCallToNative = translateToolCallToNative;
@@ -153,6 +154,36 @@ const TOOL_PARAM_NORMALIZATION = {
             'destination',
         ],
     },
+    // The real Antigravity tool is "write_to_file" (not "write_file" above,
+    // which was never actually correct for this app's tool name and left the
+    // param normalization falling through to the generic fallback). Its native
+    // arg name matches replace_file_content's convention: TargetFile.
+    write_to_file: {
+        primaryKey: 'TargetFile',
+        aliases: [
+            'target_file',
+            'targetFile',
+            'AbsolutePath',
+            'absolute_path',
+            'absolutePath',
+            'path',
+            'file_path',
+            'filePath',
+            'file',
+            'filename',
+            'FilePath',
+            'FileName',
+            'target',
+            'dest',
+            'destination',
+        ],
+        // Antigravity's real write_to_file schema hard-requires CodeContent and
+        // rejects the whole call if it's absent (confirmed via the app's own
+        // error: "CodeContent is a required parameter"). Models sometimes omit
+        // it entirely (e.g. for an empty/placeholder file) rather than sending
+        // an empty string. Backfilling avoids the call being rejected outright.
+        requiredDefaults: { CodeContent: '' },
+    },
     run_command: {
         primaryKey: 'CommandLine',
         aliases: [
@@ -244,6 +275,60 @@ const TOOL_PARAM_NORMALIZATION = {
     },
 };
 /**
+ * Local models sometimes hallucinate a plausible-sounding but non-existent
+ * tool name instead of the real one Antigravity actually registered (e.g.
+ * "read_file_content" instead of "view_file") - confirmed happening with
+ * Qwen 2.5 Coder. Antigravity's real backend rejects these outright as
+ * "invalid tool call" with no way for the model to self-correct. This maps
+ * the common hallucinated variants back to the real tool name before the
+ * call is forwarded.
+ */
+const TOOL_NAME_ALIASES = {
+    read_file_content: 'view_file',
+    read_file: 'view_file',
+    readFile: 'view_file',
+    get_file_content: 'view_file',
+    fetch_file: 'view_file',
+    open_file: 'view_file',
+    list_directory: 'list_dir',
+    listdir: 'list_dir',
+    list_files: 'list_dir',
+    ls: 'list_dir',
+    search_code: 'grep_search',
+    code_search: 'grep_search',
+    find_in_files: 'grep_search',
+    edit_file: 'replace_file_content',
+    update_file: 'replace_file_content',
+    modify_file: 'replace_file_content',
+    create_file: 'write_to_file',
+    writeFile: 'write_to_file',
+    save_file: 'write_to_file',
+    write_file: 'write_to_file',
+    execute_command: 'run_command',
+    exec: 'run_command',
+    shell: 'run_command',
+    bash: 'run_command',
+    fetch_url: 'read_url_content',
+    get_url: 'read_url_content',
+    read_webpage: 'read_url_content',
+    read_browser_page: 'read_url_content',
+    browse_url: 'read_url_content',
+    open_url: 'read_url_content',
+    visit_url: 'read_url_content',
+    fetch_page: 'read_url_content',
+    browse_page: 'read_url_content',
+    web_search: 'search_web',
+    google_search: 'search_web',
+};
+/**
+ * Maps a possibly-hallucinated tool name back to Antigravity's real one.
+ * Returns the name unchanged if it isn't a known alias (including if it's
+ * already correct, or if it's something we don't have a mapping for).
+ */
+function normalizeToolName(name) {
+    return TOOL_NAME_ALIASES[name] || name;
+}
+/**
  * Normalizes parameter names from external models to match Antigravity's expected PascalCase format.
  */
 function normalizeToolArgs(name, args) {
@@ -309,6 +394,14 @@ function normalizeToolArgs(name, args) {
         }
         else {
             electron_log_1.default.warn(`[Utils] normalizeToolArgs: "${name}" could not find value for "${config.primaryKey}". args=${JSON.stringify(args)}`);
+        }
+    }
+    if (config.requiredDefaults) {
+        for (const [key, defaultValue] of Object.entries(config.requiredDefaults)) {
+            if (normalized[key] === undefined) {
+                normalized[key] = defaultValue;
+                electron_log_1.default.info(`[Utils] normalizeToolArgs: "${name}" missing required "${key}", backfilled default`);
+            }
         }
     }
     return normalized;

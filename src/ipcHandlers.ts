@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import { broadcastState, checkForUpdates } from './updater';
+import { broadcastState, checkForUpdates, getCurrentState } from './updater';
 import log from 'electron-log/main';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -28,6 +28,7 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
   });
 
   // Auto-updater
+  ipcMain.handle('updater:get-state', () => getCurrentState());
   ipcMain.handle('updater:apply', async () => {
     broadcastState({ type: 'ready' });
   });

@@ -202,7 +202,6 @@ function proxyToGoogle(req, res, reqBody) {
         headers: headers,
     };
     const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
-        // P0-5: Timeout for Google proxy requests (60s)
         proxyReq.setTimeout(60000, () => {
             electron_log_1.default.error('[Proxy] Google proxy request timed out after 60s');
             proxyReq.destroy();
@@ -232,7 +231,6 @@ function proxyToGoogle(req, res, reqBody) {
                     text = fullResBody.toString('utf-8');
                 }
                 electron_log_1.default.info(`[Proxy] Response for ${req.url} (status: ${proxyRes.statusCode}, encoding: ${encoding}, length: ${text.length})`);
-                // P0-3: Response body content is NOT logged to disk. Only metadata.
                 const proxyHost = req.headers.host || 'localhost';
                 text = text.replace(/https:(\/\/)daily-cloudcode-pa\.googleapis\.com/g, `http:$1${proxyHost}`);
                 text = text.replace(/https:(\/\/)cloudcode-pa\.googleapis\.com/g, `http:$1${proxyHost}`);
@@ -241,19 +239,35 @@ function proxyToGoogle(req, res, reqBody) {
                 delete modifiedHeaders['content-encoding'];
                 const modifiedBuffer = Buffer.from(text, 'utf-8');
                 modifiedHeaders['content-length'] = String(modifiedBuffer.length);
-                res.writeHead(proxyRes.statusCode || 200, modifiedHeaders);
-                res.end(modifiedBuffer);
+                if (!res.headersSent) {
+                    res.writeHead(proxyRes.statusCode || 200, modifiedHeaders);
+                }
+                if (!res.writableEnded)
+                    res.end(modifiedBuffer);
             });
         }
         else {
-            res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+            if (!res.headersSent) {
+                res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+            }
             proxyRes.pipe(res);
         }
     });
     proxyReq.on('error', (err) => {
         electron_log_1.default.error('[Proxy] Google Forwarding Error:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: 'Proxy forwarding failed: ' + err.message } }));
+        if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+        }
+        if (!res.writableEnded) {
+            res.end(JSON.stringify({ error: { message: 'Proxy forwarding failed: ' + err.message } }));
+        }
+    });
+    res.on('close', () => {
+        if (!res.writableEnded) {
+            electron_log_1.default.warn('[Proxy] Client closed connection early to Google Forwarder');
+            if (!proxyReq.destroyed)
+                proxyReq.destroy();
+        }
     });
     if (reqBody) {
         proxyReq.write(reqBody);
@@ -313,10 +327,6 @@ function downloadFileContent(url, authHeader) {
     });
 }
 // ─── Custom Model Request Handler ─────────────────────────────────────────
-/**
- * Parses the Retry-After header from upstream responses (RFC 7231 §7.1.3).
- * Returns delay in milliseconds, or 0 if no valid header is present.
- */
 function parseRetryAfter(headers) {
     const val = headers['retry-after'];
     if (!val)
@@ -324,12 +334,10 @@ function parseRetryAfter(headers) {
     const raw = Array.isArray(val) ? val[0] : val;
     if (!raw)
         return 0;
-    // Try delta-seconds (e.g. "120")
     const seconds = parseInt(raw.trim(), 10);
     if (!isNaN(seconds) && seconds >= 0) {
         return seconds * 1000;
     }
-    // Try HTTP-date (e.g. "Wed, 21 Oct 2015 07:28:00 GMT")
     const date = new Date(raw);
     if (!isNaN(date.getTime())) {
         const delay = date.getTime() - Date.now();
@@ -338,7 +346,10 @@ function parseRetryAfter(headers) {
     return 0;
 }
 function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount = 0) {
-    // P3-18: Configurable max retries per model (default 3, min 0, max 5)
+    if (res.writableEnded || res.headersSent) {
+        electron_log_1.default.warn(`[Proxy] Response already finalized for ${model.name}. Aborting zombie request.`);
+        return;
+    }
     const MAX_RETRIES = Math.min(Math.max(model.maxRetries ?? 3, 0), 5);
     const REQUEST_TIMEOUT_MS = model.timeout || 120000;
     const provider = model.provider === 'custom' || model.provider === 'openrouter' ? 'openai' : model.provider;
@@ -348,8 +359,6 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
         payload.stream = true;
     }
     let finalUrlStr = model.apiUrl;
-    // P3-15: Google AI Studio uses dynamic URL construction for streaming vs non-streaming
-    // P3-16: Ollama uses URL normalization for default port and endpoint
     if (provider === 'google' || provider === 'ollama') {
         const providerTranslator = registry.getTranslator(provider);
         finalUrlStr = registry.getProviderUrl(finalUrlStr, model.externalModelName, isStream, providerTranslator);
@@ -374,8 +383,6 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
         method: 'POST',
         headers: headers,
     };
-    // P0-2: SSL bypass ONLY when user explicitly opts in via allowUnauthorized.
-    // Custom providers no longer bypass SSL automatically.
     if (model.allowUnauthorized) {
         electron_log_1.default.warn(`[Proxy] SSL verification DISABLED for ${model.name} (allowUnauthorized=true). Connection is vulnerable to MITM.`);
         options.rejectUnauthorized = false;
@@ -386,37 +393,44 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
             electron_log_1.default.error(`[Proxy] Upstream stream error for ${model.name}:`, err.message);
             if (!res.headersSent) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: { message: 'Upstream connection error: ' + err.message } }));
             }
-            else {
-                res.end();
+            if (!res.writableEnded) {
+                res.end(JSON.stringify({ error: { message: 'Upstream connection error: ' + err.message } }));
             }
         });
         if (isStream) {
-            // Check for API errors BEFORE writing streaming headers
             if (apiRes.statusCode >= 400) {
                 let errorBody = '';
                 apiRes.on('data', (chunk) => errorBody += chunk.toString());
                 apiRes.on('end', () => {
+                    if (res.writableEnded || res.headersSent)
+                        return;
                     electron_log_1.default.error(`[Proxy] Stream API error (${apiRes.statusCode}) for ${model.name}: ${errorBody.substring(0, 300)}`);
                     if (retryCount < MAX_RETRIES) {
                         electron_log_1.default.warn(`[Proxy] Stream error, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
                         setTimeout(() => handleCustomModelRequest(res, model, geminiBody, isStream, retryCount + 1), 1000 * (retryCount + 1));
                         return;
                     }
-                    res.writeHead(apiRes.statusCode, { 'Content-Type': 'application/json' });
-                    res.end(errorBody);
+                    if (!res.headersSent) {
+                        res.writeHead(apiRes.statusCode, { 'Content-Type': 'application/json' });
+                    }
+                    if (!res.writableEnded)
+                        res.end(errorBody);
                 });
                 return;
             }
-            res.writeHead(200, {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                Connection: 'keep-alive',
-                'X-Accel-Buffering': 'no',
-            });
+            if (!res.headersSent) {
+                res.writeHead(200, {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    Connection: 'keep-alive',
+                    'X-Accel-Buffering': 'no',
+                });
+            }
             let buffer = '';
             apiRes.on('data', (chunk) => {
+                if (res.writableEnded)
+                    return;
                 buffer += chunk.toString('utf-8');
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || '';
@@ -431,7 +445,7 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                         try {
                             const parsed = JSON.parse(dataStr);
                             const mapped = registry.translateStreamChunk(provider, parsed, model.name);
-                            if (mapped) {
+                            if (mapped && !res.writableEnded) {
                                 const cloudCodeResponse = {
                                     response: { candidates: [mapped] },
                                     traceId: '',
@@ -441,20 +455,21 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                             }
                         }
                         catch (err) {
-                            // Partial/invalid JSON chunks are normal during streaming; debug-level only
                             electron_log_1.default.debug(`[Proxy] Stream chunk parse warning for ${model.name}:`, err.message);
                         }
                     }
                 }
             });
             apiRes.on('end', () => {
+                if (res.writableEnded)
+                    return;
                 if (buffer.trim().startsWith('data: ')) {
                     const dataStr = buffer.trim().substring(6).trim();
                     if (dataStr !== '[DONE]') {
                         try {
                             const parsed = JSON.parse(dataStr);
                             const mapped = registry.translateStreamChunk(provider, parsed, model.name);
-                            if (mapped) {
+                            if (mapped && !res.writableEnded) {
                                 const cloudCodeResponse = {
                                     response: { candidates: [mapped] },
                                     traceId: '',
@@ -481,15 +496,21 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                     traceId: '',
                     metadata: {},
                 };
-                res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
-                res.end();
+                if (!res.writableEnded) {
+                    res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+                    res.end();
+                }
             });
         }
         else {
             let body = '';
-            apiRes.on('data', (chunk) => (body += chunk));
+            apiRes.on('data', (chunk) => {
+                if (!res.writableEnded)
+                    body += chunk;
+            });
             apiRes.on('end', () => {
-                // Retry on 5xx with exponential backoff
+                if (res.writableEnded || res.headersSent)
+                    return;
                 if (apiRes.statusCode >= 500 && apiRes.statusCode < 600 && retryCount < MAX_RETRIES) {
                     const retryAfter = parseRetryAfter(apiRes.headers);
                     const delay = retryAfter > 0 ? retryAfter : 1000 * Math.pow(2, retryCount);
@@ -497,7 +518,6 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                     setTimeout(() => handleCustomModelRequest(res, model, geminiBody, isStream, retryCount + 1), delay);
                     return;
                 }
-                // Retry on 429 with Retry-After header support + exponential backoff
                 if (apiRes.statusCode === 429 && retryCount < MAX_RETRIES) {
                     const retryAfter = parseRetryAfter(apiRes.headers);
                     const delay = retryAfter > 0 ? retryAfter : 2000 * Math.pow(2, retryCount);
@@ -506,10 +526,12 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                     return;
                 }
                 if (apiRes.statusCode >= 400) {
-                    // P0-3: Only log status code and model name, NOT response body content
                     electron_log_1.default.error(`[Proxy] API error (${apiRes.statusCode}) for ${model.name}`);
-                    res.writeHead(apiRes.statusCode, { 'Content-Type': 'application/json' });
-                    res.end(body);
+                    if (!res.headersSent) {
+                        res.writeHead(apiRes.statusCode, { 'Content-Type': 'application/json' });
+                    }
+                    if (!res.writableEnded)
+                        res.end(body);
                     return;
                 }
                 try {
@@ -529,8 +551,11 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                         traceId: '',
                         metadata: {},
                     };
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify(cloudCodeResponse));
+                    if (!res.headersSent) {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                    }
+                    if (!res.writableEnded)
+                        res.end(JSON.stringify(cloudCodeResponse));
                 }
                 catch (e) {
                     electron_log_1.default.error('[Proxy] Failed to map response:', e);
@@ -539,8 +564,12 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                         setTimeout(() => handleCustomModelRequest(res, model, geminiBody, isStream, retryCount + 1), 1000 * (retryCount + 1));
                         return;
                     }
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: { message: 'Failed to translate model response' } }));
+                    if (!res.headersSent) {
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                    }
+                    if (!res.writableEnded) {
+                        res.end(JSON.stringify({ error: { message: 'Failed to translate model response' } }));
+                    }
                 }
             });
         }
@@ -548,6 +577,8 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
     request.setTimeout(REQUEST_TIMEOUT_MS, () => {
         electron_log_1.default.error(`[Proxy] Request timeout (${REQUEST_TIMEOUT_MS}ms) for ${model.name}`);
         request.destroy();
+        if (res.writableEnded || res.headersSent)
+            return;
         if (retryCount < MAX_RETRIES) {
             electron_log_1.default.warn(`[Proxy] Timeout for ${model.name}, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
             setTimeout(() => handleCustomModelRequest(res, model, geminiBody, isStream, retryCount + 1), 1000 * (retryCount + 1));
@@ -555,11 +586,15 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
         }
         if (!res.headersSent) {
             res.writeHead(504, { 'Content-Type': 'application/json' });
+        }
+        if (!res.writableEnded) {
             res.end(JSON.stringify({ error: { message: `Request timeout after ${REQUEST_TIMEOUT_MS / 1000}s` } }));
         }
     });
     request.on('error', (err) => {
         electron_log_1.default.error('[Proxy] Custom Model Request Error:', err);
+        if (res.writableEnded || res.headersSent)
+            return;
         if (retryCount < MAX_RETRIES) {
             electron_log_1.default.warn(`[Proxy] Network error for ${model.name}, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
             setTimeout(() => handleCustomModelRequest(res, model, geminiBody, isStream, retryCount + 1), 1000 * (retryCount + 1));
@@ -582,13 +617,23 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                 };
                 res.write('data: ' + JSON.stringify(errResponse) + '\n\n');
             }
-            res.end();
+            if (!res.writableEnded)
+                res.end();
         }
         else {
             if (!res.headersSent) {
                 res.writeHead(502, { 'Content-Type': 'application/json' });
+            }
+            if (!res.writableEnded) {
                 res.end(JSON.stringify({ error: { message: 'Custom model request failed: ' + err.message } }));
             }
+        }
+    });
+    res.on('close', () => {
+        if (!res.writableEnded) {
+            electron_log_1.default.warn(`[Proxy] Client closed connection early for ${model.name}. Aborting payload.`);
+            if (!request.destroyed)
+                request.destroy();
         }
     });
     request.write(JSON.stringify(payload));
@@ -789,33 +834,42 @@ function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
                     electron_log_1.default.error('[Proxy] Failed to inject models into GetAvailableModels:', err);
                 }
             }
-            res.writeHead(lsRes.statusCode || 200, {
-                'Content-Type': 'application/grpc-web+proto',
-                'Content-Length': String(modifiedBuf.length),
-            });
-            res.end(modifiedBuf);
+            if (!res.headersSent) {
+                res.writeHead(lsRes.statusCode || 200, {
+                    'Content-Type': 'application/grpc-web+proto',
+                    'Content-Length': String(modifiedBuf.length),
+                });
+            }
+            if (!res.writableEnded)
+                res.end(modifiedBuf);
         });
         lsRes.on('error', (err) => {
             electron_log_1.default.error('[Proxy] LS error for GetAvailableModels:', err.message);
-            if (!res.headersSent) {
+            if (!res.headersSent)
                 res.writeHead(502);
+            if (!res.writableEnded)
                 res.end();
-            }
         });
     });
     lsReq.setTimeout(30000, () => {
         electron_log_1.default.error('[Proxy] GetAvailableModels forward timed out');
         lsReq.destroy();
-        if (!res.headersSent) {
+        if (!res.headersSent)
             res.writeHead(504);
+        if (!res.writableEnded)
             res.end();
-        }
     });
     lsReq.on('error', (err) => {
         electron_log_1.default.error('[Proxy] GetAvailableModels forward error:', err.message);
-        if (!res.headersSent) {
+        if (!res.headersSent)
             res.writeHead(502);
+        if (!res.writableEnded)
             res.end();
+    });
+    res.on('close', () => {
+        if (!res.writableEnded) {
+            if (!lsReq.destroyed)
+                lsReq.destroy();
         }
     });
     lsReq.write(reqBody);
@@ -829,24 +883,28 @@ function handleRequest(req, res) {
     // Health check
     if (req.method === 'GET' && (req.url === '/health' || req.url === '/healthz')) {
         const memUsage = process.memoryUsage();
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            status: 'ok',
-            uptime: process.uptime(),
-            port: proxyPort,
-            memory: {
-                rssMB: Math.round(memUsage.rss / 1024 / 1024),
-                heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-                heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
-            },
-            state: {
-                activeStreamContexts: shared_1.activeStreamContexts.size,
-                modelToolCallIds: shared_1.modelToolCallIds.size,
-                translatedToolCalls: shared_1.translatedToolCalls.size,
-                modelReasoningContent: shared_1.modelReasoningContent.size,
-            },
-            timestamp: new Date().toISOString(),
-        }));
+        if (!res.headersSent) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+        }
+        if (!res.writableEnded) {
+            res.end(JSON.stringify({
+                status: 'ok',
+                uptime: process.uptime(),
+                port: proxyPort,
+                memory: {
+                    rssMB: Math.round(memUsage.rss / 1024 / 1024),
+                    heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+                    heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
+                },
+                state: {
+                    activeStreamContexts: shared_1.activeStreamContexts.size,
+                    modelToolCallIds: shared_1.modelToolCallIds.size,
+                    translatedToolCalls: shared_1.translatedToolCalls.size,
+                    modelReasoningContent: shared_1.modelReasoningContent.size,
+                },
+                timestamp: new Date().toISOString(),
+            }));
+        }
         return;
     }
     // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS
@@ -863,6 +921,8 @@ function handleRequest(req, res) {
                 req.destroy();
                 if (!res.headersSent) {
                     res.writeHead(413, { 'Content-Type': 'application/json' });
+                }
+                if (!res.writableEnded) {
                     res.end(JSON.stringify({ error: { message: `Request body too large. Maximum: ${MAX_BODY_SIZE / 1024 / 1024}MB` } }));
                 }
             }
@@ -871,7 +931,7 @@ function handleRequest(req, res) {
         bodyChunks.push(chunk);
     });
     req.on('end', () => {
-        if (bodyRejected)
+        if (bodyRejected || res.writableEnded)
             return;
         const fullBody = Buffer.concat(bodyChunks);
         const bodyStr = fullBody.toString('utf-8');
@@ -884,8 +944,10 @@ function handleRequest(req, res) {
                 handleGetAvailableModelsProxy(res, fullBody, lsUrl);
                 return;
             }
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Missing ls parameter' }));
+            if (!res.headersSent)
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+            if (!res.writableEnded)
+                res.end(JSON.stringify({ error: 'Missing ls parameter' }));
             return;
         }
         // 1. Intercept /v1internal:fetchAvailableModels
@@ -905,7 +967,6 @@ function handleRequest(req, res) {
                 headers: fwdHeaders,
             };
             const googleReq = https.request(parsedUrl, fwdOptions, (googleRes) => {
-                // P0-5: Timeout for fetchAvailableModels forward request (30s)
                 googleReq.setTimeout(30000, () => {
                     electron_log_1.default.error('[Proxy] fetchAvailableModels forward request timed out');
                     googleReq.destroy();
@@ -924,12 +985,15 @@ function handleRequest(req, res) {
                             };
                         });
                         res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ models: mappedCustom }));
+                        if (!res.writableEnded)
+                            res.end(JSON.stringify({ models: mappedCustom }));
                     }
                 });
                 let googleBody = '';
                 googleRes.on('data', (chunk) => (googleBody += chunk));
                 googleRes.on('end', () => {
+                    if (res.writableEnded)
+                        return;
                     try {
                         electron_log_1.default.info(`[Proxy] fetchAvailableModels response status: ${googleRes.statusCode}, body length: ${googleBody.length}`);
                         const googleJson = JSON.parse(googleBody);
@@ -1050,7 +1114,6 @@ function handleRequest(req, res) {
                             });
                             googleJson.models = modelsMap;
                         }
-                        // Inject custom model slugs into agentModelSorts
                         const customSlugs = customModels.map((m) => m._slug).filter(Boolean);
                         if (customSlugs.length > 0) {
                             if (googleJson.agentModelSorts && Array.isArray(googleJson.agentModelSorts)) {
@@ -1069,8 +1132,10 @@ function handleRequest(req, res) {
                                 });
                             }
                         }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(googleJson));
+                        if (!res.headersSent)
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                        if (!res.writableEnded)
+                            res.end(JSON.stringify(googleJson));
                     }
                     catch (err) {
                         electron_log_1.default.error('[Proxy] Parsing fetchAvailableModels failed, returning custom models:', err);
@@ -1087,8 +1152,10 @@ function handleRequest(req, res) {
                                 modelProvider: 'MODEL_PROVIDER_GOOGLE',
                             };
                         });
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ models: mappedCustom }));
+                        if (!res.headersSent)
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                        if (!res.writableEnded)
+                            res.end(JSON.stringify({ models: mappedCustom }));
                     }
                 });
             });
@@ -1107,8 +1174,14 @@ function handleRequest(req, res) {
                         modelProvider: 'MODEL_PROVIDER_GOOGLE',
                     };
                 });
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ models: mappedCustom }));
+                if (!res.headersSent)
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                if (!res.writableEnded)
+                    res.end(JSON.stringify({ models: mappedCustom }));
+            });
+            res.on('close', () => {
+                if (!res.writableEnded && !googleReq.destroyed)
+                    googleReq.destroy();
             });
             if (fullBody && fullBody.length > 0) {
                 googleReq.write(fullBody);
@@ -1129,26 +1202,29 @@ function handleRequest(req, res) {
             delete mdlHeaders['accept-encoding'];
             const mdlOptions = { method: 'GET', headers: mdlHeaders };
             const googleReq = https.request(parsedUrl, mdlOptions, (googleRes) => {
-                // P0-5: Timeout for models list forward request (30s)
                 googleReq.setTimeout(30000, () => {
                     electron_log_1.default.error('[Proxy] Models list forward request timed out');
                     googleReq.destroy();
                     if (!res.headersSent) {
                         const customModels = loadCustomModels();
                         res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({
-                            models: customModels.map((m) => ({
-                                name: m.name,
-                                displayName: m.displayName,
-                                description: m.description,
-                                supportedGenerationMethods: ['generateContent'],
-                            })),
-                        }));
+                        if (!res.writableEnded) {
+                            res.end(JSON.stringify({
+                                models: customModels.map((m) => ({
+                                    name: m.name,
+                                    displayName: m.displayName,
+                                    description: m.description,
+                                    supportedGenerationMethods: ['generateContent'],
+                                })),
+                            }));
+                        }
                     }
                 });
                 let googleBody = '';
                 googleRes.on('data', (chunk) => (googleBody += chunk));
                 googleRes.on('end', () => {
+                    if (res.writableEnded)
+                        return;
                     try {
                         const googleJson = JSON.parse(googleBody);
                         const customModels = loadCustomModels();
@@ -1170,8 +1246,10 @@ function handleRequest(req, res) {
                         else {
                             googleJson.models = mappedCustom;
                         }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(googleJson));
+                        if (!res.headersSent)
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                        if (!res.writableEnded)
+                            res.end(JSON.stringify(googleJson));
                     }
                     catch (err) {
                         electron_log_1.default.error('[Proxy] Google list models failed, returning custom models list only:', err);
@@ -1185,23 +1263,32 @@ function handleRequest(req, res) {
                             outputTokenLimit: 4096,
                             supportedGenerationMethods: ['generateContent', 'countTokens'],
                         }));
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ models: mappedCustom }));
+                        if (!res.headersSent)
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                        if (!res.writableEnded)
+                            res.end(JSON.stringify({ models: mappedCustom }));
                     }
                 });
             });
             googleReq.on('error', (err) => {
                 electron_log_1.default.error('[Proxy] Google models list request error:', err);
                 const customModels = loadCustomModels();
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    models: customModels.map((m) => ({
-                        name: m.name,
-                        displayName: m.displayName,
-                        description: m.description,
-                        supportedGenerationMethods: ['generateContent'],
-                    })),
-                }));
+                if (!res.headersSent)
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                if (!res.writableEnded) {
+                    res.end(JSON.stringify({
+                        models: customModels.map((m) => ({
+                            name: m.name,
+                            displayName: m.displayName,
+                            description: m.description,
+                            supportedGenerationMethods: ['generateContent'],
+                        })),
+                    }));
+                }
+            });
+            res.on('close', () => {
+                if (!res.writableEnded && !googleReq.destroyed)
+                    googleReq.destroy();
             });
             googleReq.end();
             return;
@@ -1224,7 +1311,9 @@ function handleRequest(req, res) {
                         electron_log_1.default.info(`[Proxy] Intercepting Cloud Code generation for custom model: ${modelName} => ${matchedCustomModel.displayName}`);
                         const isStream = req.url.includes('streamGenerateContent') || req.url.includes('alt=sse');
                         const actualGeminiBody = (reqJson.request || reqJson);
-                        // Resolve fileData URIs then route to translator
+                        const toolGroups = (actualGeminiBody.tools || []);
+                        const toolCount = toolGroups.reduce((n, g) => n + (g.functionDeclarations?.length || 0), 0);
+                        electron_log_1.default.info(`[Proxy][DIAG] tools present: ${toolGroups.length > 0}, functionDeclarations: ${toolCount}, names: ${toolGroups.flatMap((g) => (g.functionDeclarations || []).map((f) => f.name)).join(',')}`);
                         resolveFileData(actualGeminiBody, req.headers).then(() => {
                             handleCustomModelRequest(res, matchedCustomModel, actualGeminiBody, isStream);
                         });
@@ -1261,8 +1350,10 @@ function handleRequest(req, res) {
                 }
                 catch (e) {
                     electron_log_1.default.error('[Proxy] JSON parse error in request body:', e);
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: { message: 'Invalid JSON request body' } }));
+                    if (!res.headersSent)
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                    if (!res.writableEnded)
+                        res.end(JSON.stringify({ error: { message: 'Invalid JSON request body' } }));
                     return;
                 }
             }

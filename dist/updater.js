@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateActions = exports.MenuUpdateStep = void 0;
 exports.broadcastState = broadcastState;
+exports.getCurrentState = getCurrentState;
 exports.initAutoUpdater = initAutoUpdater;
 exports.checkForUpdates = checkForUpdates;
 exports.quitAndInstall = quitAndInstall;
@@ -61,11 +62,17 @@ let isManualCheck = false;
 const INITIAL_CHECK_DELAY_MS = 10000; // 10 seconds
 // How often to re-check for updates after the initial check (ms)
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+let currentState = { type: 'idle' };
 /** Broadcast a state change to every open BrowserWindow. */
 function broadcastState(state) {
+    currentState = state;
     for (const win of electron_1.BrowserWindow.getAllWindows()) {
         win.webContents.send('updater:state-changed', state);
     }
+}
+/** Returns the last-known updater state, for renderers that just came up. */
+function getCurrentState() {
+    return currentState;
 }
 /**
  * Updates the state of the menu item based on the current step of the updater.

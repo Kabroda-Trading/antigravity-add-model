@@ -98,7 +98,7 @@ function translateRequest(provider, geminiBody, modelName) {
     if (provider === 'google')
         return geminiBody;
     if (OPENAI_COMPAT.has(provider))
-        return t?.mapGeminiToOpenAI ? t.mapGeminiToOpenAI(geminiBody, modelName) : geminiBody;
+        return t?.mapGeminiToOpenAI ? t.mapGeminiToOpenAI(geminiBody, modelName, provider) : geminiBody;
     if (ANTHROPIC_COMPAT.has(provider))
         return t?.mapGeminiToAnthropic ? t.mapGeminiToAnthropic(geminiBody, modelName) : geminiBody;
     // Generic: try mapGeminiTo<Provider> convention

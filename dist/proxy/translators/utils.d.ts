@@ -41,6 +41,12 @@ export interface FileListResponse {
 }
 export type ToolResponse = string | DirectoryItem[] | MatchResult[] | FileListResponse;
 /**
+ * Maps a possibly-hallucinated tool name back to Antigravity's real one.
+ * Returns the name unchanged if it isn't a known alias (including if it's
+ * already correct, or if it's something we don't have a mapping for).
+ */
+export declare function normalizeToolName(name: string): string;
+/**
  * Normalizes parameter names from external models to match Antigravity's expected PascalCase format.
  */
 export declare function normalizeToolArgs(name: string, args: Record<string, unknown> | null | undefined): Record<string, unknown>;

@@ -18,6 +18,7 @@ const updaterAPI = {
             electron_1.ipcRenderer.removeListener('updater:state-changed', handler);
         };
     },
+    getState: () => electron_1.ipcRenderer.invoke('updater:get-state'),
     applyUpdate: () => electron_1.ipcRenderer.invoke('updater:apply'),
     quitAndInstall: () => electron_1.ipcRenderer.invoke('updater:quit-and-install'),
     checkForUpdates: () => electron_1.ipcRenderer.invoke('updater:check-for-updates'),

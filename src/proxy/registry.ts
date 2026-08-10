@@ -15,7 +15,7 @@ import log from 'electron-log';
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export interface TranslatorModule {
-  mapGeminiToOpenAI?: (body: unknown, modelName: string) => unknown;
+  mapGeminiToOpenAI?: (body: unknown, modelName: string, provider?: string) => unknown;
   mapOpenAIToGemini?: (res: unknown, modelName: string) => unknown;
   mapOpenAIChunkToGemini?: (chunk: unknown, modelName: string) => unknown | null;
   mapGeminiToAnthropic?: (body: unknown, modelName: string) => unknown;
@@ -88,7 +88,7 @@ export function translateRequest(provider: string, geminiBody: unknown, modelNam
   const t = getTranslator(provider);
 
   if (provider === 'google') return geminiBody;
-  if (OPENAI_COMPAT.has(provider)) return t?.mapGeminiToOpenAI ? t.mapGeminiToOpenAI(geminiBody, modelName) : geminiBody;
+  if (OPENAI_COMPAT.has(provider)) return t?.mapGeminiToOpenAI ? t.mapGeminiToOpenAI(geminiBody, modelName, provider) : geminiBody;
   if (ANTHROPIC_COMPAT.has(provider)) return t?.mapGeminiToAnthropic ? t.mapGeminiToAnthropic(geminiBody, modelName) : geminiBody;
 
   // Generic: try mapGeminiTo<Provider> convention

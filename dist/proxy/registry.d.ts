@@ -8,7 +8,7 @@
  *   3. The registry detects it automatically — no config changes needed.
  */
 export interface TranslatorModule {
-    mapGeminiToOpenAI?: (body: unknown, modelName: string) => unknown;
+    mapGeminiToOpenAI?: (body: unknown, modelName: string, provider?: string) => unknown;
     mapOpenAIToGemini?: (res: unknown, modelName: string) => unknown;
     mapOpenAIChunkToGemini?: (chunk: unknown, modelName: string) => unknown | null;
     mapGeminiToAnthropic?: (body: unknown, modelName: string) => unknown;

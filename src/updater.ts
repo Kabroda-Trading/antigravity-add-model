@@ -29,11 +29,19 @@ interface UpdaterState {
   update?: { version: string };
 }
 
+let currentState: UpdaterState = { type: 'idle' };
+
 /** Broadcast a state change to every open BrowserWindow. */
 export function broadcastState(state: UpdaterState): void {
+  currentState = state;
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('updater:state-changed', state);
   }
+}
+
+/** Returns the last-known updater state, for renderers that just came up. */
+export function getCurrentState(): UpdaterState {
+  return currentState;
 }
 
 /**

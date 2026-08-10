@@ -13,6 +13,8 @@ interface UpdaterState {
 }
 /** Broadcast a state change to every open BrowserWindow. */
 export declare function broadcastState(state: UpdaterState): void;
+/** Returns the last-known updater state, for renderers that just came up. */
+export declare function getCurrentState(): UpdaterState;
 /**
  * Initializes the auto-updater and registers IPC handlers.
  * Call once after the first window is created.

@@ -18,3 +18,11 @@ scratch/
 dist/__mocks__/
 dist/*.test.js
 dist/**/*.test.js
+
+# Local model config (contains encrypted API keys - machine-specific, never commit)
+custom_models.json
+
+# Build/distribution artifacts - regenerate from src/, don't hand-maintain copies in git
+*.zip
+portable/
+antigravity-custom-model-enabler/

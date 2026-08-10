@@ -12,6 +12,7 @@ interface UpdaterState {
 type UnsubscribeFn = () => void;
 interface UpdaterAPI {
     onStateChanged: (callback: (state: UpdaterState) => void) => UnsubscribeFn;
+    getState: () => Promise<UpdaterState>;
     applyUpdate: () => Promise<void>;
     quitAndInstall: () => Promise<void>;
     checkForUpdates: () => Promise<void>;

@@ -9,6 +9,10 @@ export interface StreamContext {
   accumulatedText: string;
   accumulatedReasoning: string;
   toolCalls: Record<number, { id: string; name: string; arguments: string }>;
+  /** How much of accumulatedText has already been streamed to the UI. Used to
+   * withhold text that might still turn into a text-embedded tool call
+   * (raw JSON / DSML) until we know it isn't one. */
+  emittedTextLength: number;
 }
 
 export interface StateTimestamps {

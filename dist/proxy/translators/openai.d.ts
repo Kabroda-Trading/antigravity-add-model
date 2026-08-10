@@ -130,7 +130,7 @@ interface GeminiUsageMetadata {
     totalTokenCount: number;
 }
 declare function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[]): OpenAITool[];
-export declare function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: string): OpenAIRequestBody;
+export declare function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: string, provider?: string): OpenAIRequestBody;
 export declare function mapOpenAIToGemini(openAiRes: OpenAIResponse, modelName: string): GeminiGenerateContentResponse;
 export declare function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string): GeminiCandidate | null;
 export { mapGeminiToolsToOpenAI };

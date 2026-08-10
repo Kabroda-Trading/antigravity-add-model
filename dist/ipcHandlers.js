@@ -63,6 +63,7 @@ function registerIpcHandlers(storageManager) {
         return result.filePaths[0];
     });
     // Auto-updater
+    electron_1.ipcMain.handle('updater:get-state', () => (0, updater_1.getCurrentState)());
     electron_1.ipcMain.handle('updater:apply', async () => {
         (0, updater_1.broadcastState)({ type: 'ready' });
     });

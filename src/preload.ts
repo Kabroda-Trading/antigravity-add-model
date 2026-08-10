@@ -17,6 +17,7 @@ type UnsubscribeFn = () => void;
 
 interface UpdaterAPI {
   onStateChanged: (callback: (state: UpdaterState) => void) => UnsubscribeFn;
+  getState: () => Promise<UpdaterState>;
   applyUpdate: () => Promise<void>;
   quitAndInstall: () => Promise<void>;
   checkForUpdates: () => Promise<void>;
@@ -126,6 +127,7 @@ const updaterAPI: UpdaterAPI = {
       ipcRenderer.removeListener('updater:state-changed', handler);
     };
   },
+  getState: () => ipcRenderer.invoke('updater:get-state'),
   applyUpdate: () => ipcRenderer.invoke('updater:apply'),
   quitAndInstall: () => ipcRenderer.invoke('updater:quit-and-install'),
   checkForUpdates: () => ipcRenderer.invoke('updater:check-for-updates'),

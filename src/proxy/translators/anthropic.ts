@@ -350,7 +350,12 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
   const streamId = chunk.message?.id || 'anthropic_stream';
 
   if (!activeStreamContexts.has(streamId)) {
-    activeStreamContexts.set(streamId, { accumulatedText: '', accumulatedReasoning: '', toolCalls: {} });
+    activeStreamContexts.set(streamId, {
+      accumulatedText: '',
+      accumulatedReasoning: '',
+      toolCalls: {},
+      emittedTextLength: 0,
+    });
     touchStateTimestamp(stateTimestamps.streamCtx, streamId);
   }
   const context = activeStreamContexts.get(streamId)!;

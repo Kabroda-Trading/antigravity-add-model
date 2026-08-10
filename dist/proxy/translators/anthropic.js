@@ -261,7 +261,12 @@ function mapAnthropicChunkToGemini(chunk, modelName) {
     const type = chunk.type;
     const streamId = chunk.message?.id || 'anthropic_stream';
     if (!shared_1.activeStreamContexts.has(streamId)) {
-        shared_1.activeStreamContexts.set(streamId, { accumulatedText: '', accumulatedReasoning: '', toolCalls: {} });
+        shared_1.activeStreamContexts.set(streamId, {
+            accumulatedText: '',
+            accumulatedReasoning: '',
+            toolCalls: {},
+            emittedTextLength: 0,
+        });
         (0, shared_1.touchStateTimestamp)(shared_1.stateTimestamps.streamCtx, streamId);
     }
     const context = shared_1.activeStreamContexts.get(streamId);

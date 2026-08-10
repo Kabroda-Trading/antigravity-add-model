@@ -10,6 +10,7 @@ import {
   translateToolCallToNative,
   formatTranslatedResponse,
   normalizeToolArgs,
+  normalizeToolName,
   ToolCallArgs,
   TranslatedCallInfo,
 } from './utils';
@@ -173,12 +174,35 @@ interface DSMLParsedResult {
 
 // ─── REQUEST: Gemini → OpenAI ──────────────────────────────────────────────
 
+/**
+ * Multi-agent orchestration tools (send_message, define_subagent, etc.) are
+ * meant for agent-to-agent handoff within Antigravity's own Gemini-driven
+ * cascade system, not for talking to the end user. Smaller local models
+ * (observed: Qwen 2.5 Coder, Hermes 3 via Ollama) reliably misuse
+ * send_message as if it were "reply to the user," get rejected by
+ * Antigravity's real backend ("recipient 'user' not found"), and then loop
+ * on the same broken call indefinitely instead of just answering in plain
+ * text. Withholding these tools from local models avoids that failure mode
+ * entirely - local models don't have the training data to use Antigravity's
+ * specific multi-agent orchestration correctly anyway, and a plain text
+ * response already covers "tell the user something."
+ */
+const ORCHESTRATION_ONLY_TOOLS = new Set([
+  'send_message',
+  'define_subagent',
+  'invoke_subagent',
+  'manage_subagents',
+  'manage_task',
+  'schedule',
+]);
+
 function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[]): OpenAITool[] {
   if (!geminiTools || !Array.isArray(geminiTools)) return [];
   const openaiTools: OpenAITool[] = [];
   for (const toolGroup of geminiTools) {
     if (toolGroup.functionDeclarations && Array.isArray(toolGroup.functionDeclarations)) {
       for (const func of toolGroup.functionDeclarations) {
+        if (ORCHESTRATION_ONLY_TOOLS.has(func.name)) continue;
         const params = func.parameters
           ? (JSON.parse(JSON.stringify(func.parameters)) as Record<string, unknown>)
           : { type: 'object', properties: {} };
@@ -202,14 +226,33 @@ function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[]): OpenAITool[] {
   return openaiTools;
 }
 
-export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: string): OpenAIRequestBody {
+// Local models (observed: Qwen 2.5 Coder, repeatedly) default to Unix-style
+// paths (/home/user/..., /Users/..., /path/to/...) regardless of the actual
+// system, most likely because their training data skews heavily toward
+// Linux/Mac examples and nothing in the prompt tells them otherwise. Gemini
+// models apparently don't need this reminder (never observed the issue with
+// them), but local models clearly do - this gets appended to the system
+// message only for Ollama-routed requests.
+const WINDOWS_PATH_REMINDER =
+  '\n\nIMPORTANT: This system is Windows, not Linux/Mac. All file paths MUST use Windows format ' +
+  '(e.g. C:\\Users\\username\\Documents\\file.txt with backslashes and a drive letter). ' +
+  'Never use Unix-style paths like /home/user/... or /Users/... or /path/to/... - they do not exist on this system ' +
+  'and any command or tool call using one will fail. If you do not know the exact path, use a tool to look it up ' +
+  '(e.g. list a parent directory) rather than guessing a placeholder path.';
+
+export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: string, provider?: string): OpenAIRequestBody {
   const messages: OpenAIMessage[] = [];
 
   if (geminiBody.systemInstruction && geminiBody.systemInstruction.parts) {
-    const systemText = geminiBody.systemInstruction.parts.map((p) => p.text || '').join('');
+    let systemText = geminiBody.systemInstruction.parts.map((p) => p.text || '').join('');
+    if (provider === 'ollama') {
+      systemText += WINDOWS_PATH_REMINDER;
+    }
     if (systemText) {
       messages.push({ role: 'system', content: systemText });
     }
+  } else if (provider === 'ollama') {
+    messages.push({ role: 'system', content: WINDOWS_PATH_REMINDER.trim() });
   }
 
   if (geminiBody.contents) {
@@ -333,7 +376,13 @@ export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: stri
   const needsCompletionTokens = isThinkingModel || isReasoningModel || is41Model || is5Pro || is5Thinking;
   const needsNoTemperature = isThinkingModel || isReasoningModel;
 
-  const maxTokens = geminiBody.generationConfig?.maxOutputTokens ?? 4000;
+  // Local (Ollama) inference has no per-token cost, so there's no reason to
+  // cap it as tightly as a metered cloud API. A 4000-token ceiling is easy
+  // to hit for tool calls carrying embedded file/script content plus
+  // verbose metadata fields, and a response cut off mid-JSON produces a
+  // malformed tool call the model then has no way to recover from.
+  const defaultMaxTokens = provider === 'ollama' ? 16000 : 4000;
+  const maxTokens = geminiBody.generationConfig?.maxOutputTokens ?? defaultMaxTokens;
   const payload: OpenAIRequestBody = {
     model: modelName,
     messages,
@@ -375,7 +424,7 @@ function parseDSMLToolCalls(text: string): DSMLParsedResult | null {
         }
         args[paramName] = paramValue;
       }
-      functionCalls.push({ name: funcName, args });
+      functionCalls.push({ name: normalizeToolName(funcName), args });
     }
     if (functionCalls.length === 0) return null;
     log.info(
@@ -392,31 +441,123 @@ function parseDSMLToolCalls(text: string): DSMLParsedResult | null {
   }
 }
 
+/**
+ * Repairs invalid JSON escape sequences. Some local models emit Windows
+ * paths (e.g. C:\Users\foo) as raw single backslashes inside JSON string
+ * values, which is invalid JSON (\U, \S, \., \g etc. are not valid escapes)
+ * and makes JSON.parse throw. This doubles any LONE backslash not already
+ * part of a valid escape pair before parsing. Already-valid `\\` pairs are
+ * matched and consumed whole first so they're left untouched - otherwise a
+ * correctly-escaped `\\` gets misread as one lone backslash followed by
+ * another lone backslash, and the second one gets doubled too, corrupting
+ * already-valid input (e.g. turning `\\` into `\\\`).
+ */
+function repairJsonBackslashes(text: string): string {
+  return text.replace(/\\\\|\\(?!["\\/bfnrtu])/g, (m) => (m.length === 2 ? m : '\\\\'));
+}
+
+/**
+ * Some models (observed: Qwen 2.5 Coder via Ollama) emit a tool call as a
+ * raw JSON object in the text content - e.g. {"name": "view_file",
+ * "arguments": {...}} - instead of using the OpenAI-native tool_calls field
+ * or DeepSeek's DSML format. Neither of those parsers catch this, so the
+ * call silently falls through as plain text and never executes. This parser
+ * detects and extracts that pattern.
+ */
+function parseRawJSONToolCall(text: string): DSMLParsedResult | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed.includes('"name"') || !trimmed.includes('"arguments"')) return null;
+
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  const jsonSlice = trimmed.slice(start, end + 1);
+
+  try {
+    // Try the raw slice first - many models already emit correctly-escaped
+    // JSON, and repairing valid input is what caused the original bug here.
+    // Only fall back to the backslash repair if raw parsing genuinely fails.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonSlice);
+    } catch {
+      parsed = JSON.parse(repairJsonBackslashes(jsonSlice));
+    }
+    const candidates = Array.isArray(parsed) ? parsed : [parsed];
+    const functionCalls: { name: string; args: Record<string, unknown> }[] = [];
+    // Some models occasionally emit a placeholder/null-ish name (observed:
+    // literal "None") when they didn't actually mean to call a tool. There's
+    // no real tool by that name, so forwarding it just reproduces the same
+    // "invalid tool call" rejection - treat it as noise instead.
+    const NON_CALLS = new Set(['none', 'null', 'undefined', 'n/a', '']);
+    for (const c of candidates) {
+      const call = c as { name?: unknown; arguments?: unknown };
+      if (
+        call &&
+        typeof call.name === 'string' &&
+        !NON_CALLS.has(call.name.trim().toLowerCase()) &&
+        call.arguments &&
+        typeof call.arguments === 'object'
+      ) {
+        functionCalls.push({ name: normalizeToolName(call.name), args: call.arguments as Record<string, unknown> });
+      }
+    }
+    if (functionCalls.length === 0) return null;
+    log.info(
+      `[Proxy] Detected ${functionCalls.length} raw-JSON tool call(s): ${functionCalls.map((f) => f.name).join(', ')}`,
+    );
+    log.info(`[Proxy][DIAG] raw-JSON tool call args: ${JSON.stringify(functionCalls)}`);
+    const cleanText = (trimmed.slice(0, start) + trimmed.slice(end + 1)).trim();
+    return { functionCalls, cleanText };
+  } catch (e) {
+    log.warn(
+      `[Proxy][DIAG] Raw JSON tool call parse failed: ${(e as Error).message} | jsonSlice=${JSON.stringify(jsonSlice)} | repaired=${JSON.stringify(repairJsonBackslashes(jsonSlice))}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Tries every known text-embedded tool-call format in order: DSML (DeepSeek),
+ * then raw JSON (observed with Qwen 2.5 Coder). Returns the first match.
+ */
+function parseTextEmbeddedToolCalls(text: string): DSMLParsedResult | null {
+  return parseDSMLToolCalls(text) || parseRawJSONToolCall(text);
+}
+
 export function mapOpenAIToGemini(openAiRes: OpenAIResponse, modelName: string): GeminiGenerateContentResponse {
   const choice = openAiRes.choices?.[0];
 
   if (choice?.message?.tool_calls && choice.message.tool_calls.length > 0) {
     const parts: GeminiPart[] = choice.message.tool_calls.map((tc) => {
       let args: ToolCallArgs;
+      log.info(
+        `[Proxy][DIAG] raw tool_call: name=${tc.function.name}, arguments=${JSON.stringify(tc.function.arguments)}`,
+      );
       try {
         args =
           typeof tc.function.arguments === 'string'
             ? JSON.parse(tc.function.arguments)
             : (tc.function.arguments as unknown as ToolCallArgs);
       } catch (e) {
-        log.debug('[OpenAI] Tool call args parse fallback:', (e as Error).message);
+        log.warn('[Proxy][DIAG] Tool call args JSON.parse FAILED:', (e as Error).message);
         args = {};
       }
-      args = normalizeToolArgs(tc.function.name, args) as ToolCallArgs;
+      const toolName = normalizeToolName(tc.function.name);
+      if (toolName !== tc.function.name) {
+        log.info(`[Proxy] Normalized hallucinated tool name "${tc.function.name}" -> "${toolName}"`);
+      }
+      args = normalizeToolArgs(toolName, args) as ToolCallArgs;
       const modelTCIds = modelToolCallIds.get(modelName) || {};
-      modelTCIds[tc.function.name] = tc.id;
+      modelTCIds[toolName] = tc.id;
       modelToolCallIds.set(modelName, modelTCIds);
       touchStateTimestamp(stateTimestamps.toolCallIds, modelName);
-      const translated = translateToolCallToNative(tc.function.name, args);
-      if (translated.name !== tc.function.name) {
+      const translated = translateToolCallToNative(toolName, args);
+      if (translated.name !== toolName) {
         translated.args = normalizeToolArgs(translated.name, translated.args) as Record<string, unknown>;
         translatedToolCalls.set(tc.id, {
-          originalName: tc.function.name,
+          originalName: toolName,
           translatedName: translated.name,
           cmd: args.CommandLine || '',
           cwd: args.Cwd || '',
@@ -436,7 +577,7 @@ export function mapOpenAIToGemini(openAiRes: OpenAIResponse, modelName: string):
   }
 
   const text = choice?.message?.content || '';
-  const dsml = parseDSMLToolCalls(text);
+  const dsml = parseTextEmbeddedToolCalls(text);
   if (dsml && dsml.functionCalls.length > 0) {
     const parts: GeminiPart[] = dsml.functionCalls.map((fc) => {
       const na = normalizeToolArgs(fc.name, fc.args);
@@ -478,7 +619,12 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
   const streamId = ((chunk as Record<string, unknown>).id as string) || 'default_stream';
 
   if (!activeStreamContexts.has(streamId)) {
-    activeStreamContexts.set(streamId, { accumulatedText: '', accumulatedReasoning: '', toolCalls: {} });
+    activeStreamContexts.set(streamId, {
+      accumulatedText: '',
+      accumulatedReasoning: '',
+      toolCalls: {},
+      emittedTextLength: 0,
+    });
     touchStateTimestamp(stateTimestamps.streamCtx, streamId);
   }
   const context = activeStreamContexts.get(streamId)!;
@@ -493,7 +639,7 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
     }
   }
 
-  let text = delta?.content || '';
+  const text = delta?.content || '';
   const reasoning = delta?.reasoning_content || delta?.reasoning || '';
   if (reasoning) {
     context.accumulatedReasoning += reasoning;
@@ -501,7 +647,7 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
   }
   if (text) context.accumulatedText += text;
 
-  const dsml = parseDSMLToolCalls(context.accumulatedText);
+  const dsml = parseTextEmbeddedToolCalls(context.accumulatedText);
   if (dsml && dsml.functionCalls.length > 0) {
     const parts: GeminiPart[] = dsml.functionCalls.map((fc) => {
       const na = normalizeToolArgs(fc.name, fc.args);
@@ -509,10 +655,27 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
       return { functionCall: { name: tr.name, args: tr.args as Record<string, unknown> } };
     });
     context.accumulatedText = '';
+    context.emittedTextLength = 0;
     return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
   }
 
   const finishReason = choice.finish_reason;
+
+  // Withhold streaming raw text while the accumulated text still looks like it
+  // could be the start of a text-embedded tool call (DSML or raw JSON) that
+  // just hasn't finished arriving yet - this is what prevents a partial
+  // {"name": "view_file", ... blob from being shown to the user character by
+  // character before we know whether it's really a tool call. Once it's
+  // clear it isn't one (doesn't start with '{' or '<'), flush everything
+  // withheld so far in one chunk and resume normal per-delta streaming.
+  const trimmedAccum = context.accumulatedText.trimStart();
+  const stillLooksPending = trimmedAccum.length > 0 && /^[{<]/.test(trimmedAccum);
+  const unemitted = context.accumulatedText.slice(context.emittedTextLength);
+  if (!finishReason && !stillLooksPending && unemitted) {
+    context.emittedTextLength = context.accumulatedText.length;
+    return { content: { parts: [{ text: unemitted }], role: 'model' }, finishReason: 'OTHER', index: 0 };
+  }
+
   if (finishReason === 'stop' || finishReason === 'length') {
     // Check for pending native tool_calls before closing stream
     const pendingToolCalls = Object.values(context.toolCalls).filter((tc) => tc.name && tc.arguments);
@@ -524,15 +687,16 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
         } catch (_e) {
           args = {};
         }
-        args = normalizeToolArgs(tc.name, args) as ToolCallArgs;
+        const pendingToolName = normalizeToolName(tc.name);
+        args = normalizeToolArgs(pendingToolName, args) as ToolCallArgs;
         const modelTCIds = modelToolCallIds.get(modelName) || {};
-        modelTCIds[tc.name] = tc.id;
+        modelTCIds[pendingToolName] = tc.id;
         modelToolCallIds.set(modelName, modelTCIds);
         touchStateTimestamp(stateTimestamps.toolCallIds, modelName);
-        const translated = translateToolCallToNative(tc.name, args);
-        if (translated.name !== tc.name) {
+        const translated = translateToolCallToNative(pendingToolName, args);
+        if (translated.name !== pendingToolName) {
           translatedToolCalls.set(tc.id, {
-            originalName: tc.name,
+            originalName: pendingToolName,
             translatedName: translated.name,
             cmd: args.CommandLine || '',
             cwd: args.Cwd || '',
@@ -546,7 +710,7 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
     }
     // Check for accumulated DSML tool calls
     if (context.accumulatedText) {
-      const dsml2 = parseDSMLToolCalls(context.accumulatedText);
+      const dsml2 = parseTextEmbeddedToolCalls(context.accumulatedText);
       if (dsml2 && dsml2.functionCalls.length > 0) {
         const parts: GeminiPart[] = dsml2.functionCalls.map((fc) => {
           const na = normalizeToolArgs(fc.name, fc.args);
@@ -559,7 +723,8 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
       }
     }
     activeStreamContexts.delete(streamId);
-    return { content: { parts: text ? [{ text }] : [], role: 'model' }, finishReason: 'STOP', index: 0 };
+    const finalUnemitted = context.accumulatedText.slice(context.emittedTextLength);
+    return { content: { parts: finalUnemitted ? [{ text: finalUnemitted }] : [], role: 'model' }, finishReason: 'STOP', index: 0 };
   }
 
   // Only emit tool calls when finishReason signals completion (args are fully accumulated)
@@ -572,16 +737,17 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
         log.debug('[OpenAI] Stream tool args parse fallback:', (e as Error).message);
         args = {};
       }
-      args = normalizeToolArgs(tc.name, args) as ToolCallArgs;
+      const streamToolName = normalizeToolName(tc.name);
+      args = normalizeToolArgs(streamToolName, args) as ToolCallArgs;
       const modelTCIds = modelToolCallIds.get(modelName) || {};
-      modelTCIds[tc.name] = tc.id;
+      modelTCIds[streamToolName] = tc.id;
       modelToolCallIds.set(modelName, modelTCIds);
       touchStateTimestamp(stateTimestamps.toolCallIds, modelName);
-      const translated = translateToolCallToNative(tc.name, args);
-      if (translated.name !== tc.name) {
+      const translated = translateToolCallToNative(streamToolName, args);
+      if (translated.name !== streamToolName) {
         translated.args = normalizeToolArgs(translated.name, translated.args) as Record<string, unknown>;
         translatedToolCalls.set(tc.id, {
-          originalName: tc.name,
+          originalName: streamToolName,
           translatedName: translated.name,
           cmd: args.CommandLine || '',
           cwd: args.Cwd || '',
@@ -594,10 +760,8 @@ export function mapOpenAIChunkToGemini(chunk: OpenAIResponse, modelName: string)
     return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
   }
 
-  if (text) {
-    return { content: { parts: [{ text }], role: 'model' }, finishReason: 'OTHER', index: 0 };
-  }
-
+  // Still withholding (stillLooksPending was true and no finish signal yet) -
+  // nothing new to show the user this chunk.
   return null;
 }
 
