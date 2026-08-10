@@ -21,24 +21,44 @@ $AsarPath = "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar"
 $BackupAsar = "$AsarPath.backup"
 $TempDir = Join-Path $env:TEMP "antigravity_safe_deploy"
 
-# 3. Yedek kontrol - yoksa mevcut asar'i yedekle
+# 3. Yedek kontrol - yoksa VEYA eskiyse (Antigravity guncellenmisse) mevcut asar'i yedekle
 $AsarUnpacked = "$AsarPath.unpacked"
 $BackupAsarUnpacked = "$BackupAsar.unpacked"
 
-if (Test-Path $BackupAsar) {
-    Write-Host "[2/7] Yedek bulundu: $BackupAsar" -ForegroundColor Green
+# P3-01: Version guard. A backup taken before an Antigravity auto-update is not
+# safe to reuse forever - repacking app.asar from a stale backup while the rest
+# of the install (language_server.exe, Electron runtime files) is newer causes
+# a version mismatch that can black-screen the app. Track the Antigravity.exe
+# file version alongside the backup and force a fresh backup whenever it changes.
+$VersionMarker = "$BackupAsar.version"
+$AntigravityExe = "$env:LOCALAPPDATA\Programs\antigravity\Antigravity.exe"
+$CurrentVersion = $null
+if (Test-Path $AntigravityExe) {
+    $CurrentVersion = (Get-Item $AntigravityExe).VersionInfo.FileVersion
+}
+$BackedUpVersion = if (Test-Path $VersionMarker) { (Get-Content $VersionMarker -Raw).Trim() } else { $null }
+$BackupIsStale = (Test-Path $BackupAsar) -and $CurrentVersion -and ($CurrentVersion -ne $BackedUpVersion)
+
+if ((Test-Path $BackupAsar) -and -not $BackupIsStale) {
+    Write-Host "[2/7] Yedek bulundu: $BackupAsar (v$BackedUpVersion)" -ForegroundColor Green
     if ((Test-Path $AsarUnpacked) -and -not (Test-Path $BackupAsarUnpacked)) {
         Write-Host "   Yedek unpacked klasoru olusturuluyor..." -ForegroundColor Yellow
         Copy-Item $AsarUnpacked $BackupAsarUnpacked -Recurse -Force
         Write-Host "   Yedek unpacked klasoru olusturuldu." -ForegroundColor Green
     }
 } elseif (Test-Path $AsarPath) {
-    Write-Host "[2/7] Yedek yok - mevcut asar yedekleniyor..." -ForegroundColor Yellow
+    if ($BackupIsStale) {
+        Write-Host "[2/7] Antigravity guncellenmis (yedek v$BackedUpVersion, simdi v$CurrentVersion) - yedek yenileniyor..." -ForegroundColor Yellow
+    } else {
+        Write-Host "[2/7] Yedek yok - mevcut asar yedekleniyor..." -ForegroundColor Yellow
+    }
     Copy-Item $AsarPath $BackupAsar -Force
+    if (Test-Path $BackupAsarUnpacked) { Remove-Item $BackupAsarUnpacked -Recurse -Force }
     if (Test-Path $AsarUnpacked) {
         Copy-Item $AsarUnpacked $BackupAsarUnpacked -Recurse -Force
     }
-    Write-Host "   Yedek olusturuldu." -ForegroundColor Green
+    if ($CurrentVersion) { Set-Content -Path $VersionMarker -Value $CurrentVersion -NoNewline }
+    Write-Host "   Yedek olusturuldu (v$CurrentVersion)." -ForegroundColor Green
 } else {
     Write-Host "[2/7] HATA: app.asar bulunamadi: $AsarPath" -ForegroundColor Red
     exit 1
