@@ -519,6 +519,33 @@ Here is an example of a **fully loaded** `custom_models.json` file configuring *
 | `allowUnauthorized` | (Optional) Set to `true` to bypass SSL certificate validation. Useful for internal/self-signed endpoints. Default: `false`. |
 | `timeout` | (Optional) Request timeout in milliseconds. Default: `120000` (2 minutes). |
 | `maxRetries` | (Optional) Maximum retry attempts for rate-limited/failed requests. Default: `3`. |
+| `localFastTier` | (Optional) `name` of another configured model to automatically route pure tool-call-result turns to (e.g. "here's the file content you asked for" with no new reasoning). The rest of the conversation - the initial request, anything with fresh text, final answers - stays on this model. Only fires when the referenced model exists; otherwise silently ignored. |
+
+### Local Fast-Tier Routing
+
+If you configure a cloud model with `localFastTier` pointing at a local Ollama model, the proxy automatically hands off turns that are purely "here's the tool result" to the local model instead - invisibly, in the same conversation - while everything that needs real reasoning stays on the model you picked. This is opt-in per model; anything without `localFastTier` set behaves exactly as before.
+
+```json
+{
+  "name": "models/deepseek-v4-pro",
+  "displayName": "DeepSeek V4 Pro (Cloud)",
+  "provider": "custom",
+  "apiKey": "YOUR_KEY",
+  "apiUrl": "https://ollama.com/v1/chat/completions",
+  "externalModelName": "deepseek-v4-pro",
+  "localFastTier": "models/phi4-mini"
+},
+{
+  "name": "models/phi4-mini",
+  "displayName": "Phi-4 Mini (Local)",
+  "provider": "ollama",
+  "apiKey": "",
+  "apiUrl": "http://127.0.0.1:11434/v1/chat/completions",
+  "externalModelName": "phi4-mini"
+}
+```
+
+Routing decisions are logged (`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ...`) in the same log file referenced in Troubleshooting, so you can confirm it's actually firing.
 
 ## UI Features
 

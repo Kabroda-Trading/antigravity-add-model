@@ -130,6 +130,9 @@ function validateCustomModel(model) {
     if (m.supportsImages !== undefined && typeof m.supportsImages !== 'boolean') {
         return { valid: false, error: 'supportsImages must be a boolean' };
     }
+    if (m.localFastTier !== undefined && typeof m.localFastTier !== 'string') {
+        return { valid: false, error: 'localFastTier must be a string' };
+    }
     return { valid: true };
 }
 /**

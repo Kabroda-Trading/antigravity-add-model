@@ -16,6 +16,8 @@ export interface CustomModel {
     _slug?: string;
     timeout?: number;
     maxRetries?: number;
+    /** name of another configured model to route pure tool-continuation turns to */
+    localFastTier?: string;
 }
 export declare function startProxy(): Promise<number>;
 export declare function stopProxy(): Promise<void>;

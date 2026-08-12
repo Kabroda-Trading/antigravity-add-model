@@ -50,6 +50,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const electron_1 = require("electron");
 const electron_log_1 = __importDefault(require("electron-log"));
+const routing_1 = require("./proxy/routing");
 // ─── Imports ──────────────────────────────────────────────────────────────
 let server = null;
 let proxyPort = 0;
@@ -1315,7 +1316,11 @@ function handleRequest(req, res) {
                         const toolCount = toolGroups.reduce((n, g) => n + (g.functionDeclarations?.length || 0), 0);
                         electron_log_1.default.info(`[Proxy][DIAG] tools present: ${toolGroups.length > 0}, functionDeclarations: ${toolCount}, names: ${toolGroups.flatMap((g) => (g.functionDeclarations || []).map((f) => f.name)).join(',')}`);
                         resolveFileData(actualGeminiBody, req.headers).then(() => {
-                            handleCustomModelRequest(res, matchedCustomModel, actualGeminiBody, isStream);
+                            const { model: effectiveModel, routed } = (0, routing_1.resolveEffectiveModel)(matchedCustomModel, customModels, actualGeminiBody);
+                            if (routed) {
+                                electron_log_1.default.info(`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${matchedCustomModel.displayName} => ${effectiveModel.displayName}`);
+                            }
+                            handleCustomModelRequest(res, effectiveModel, actualGeminiBody, isStream);
                         });
                         return;
                     }
@@ -1344,7 +1349,11 @@ function handleRequest(req, res) {
                 try {
                     const geminiBody = JSON.parse(bodyStr);
                     resolveFileData(geminiBody, req.headers).then(() => {
-                        handleCustomModelRequest(res, matchedCustomModel, geminiBody, isStandardStream);
+                        const { model: effectiveModel, routed } = (0, routing_1.resolveEffectiveModel)(matchedCustomModel, customModels, geminiBody);
+                        if (routed) {
+                            electron_log_1.default.info(`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${matchedCustomModel.displayName} => ${effectiveModel.displayName}`);
+                        }
+                        handleCustomModelRequest(res, effectiveModel, geminiBody, isStandardStream);
                     });
                     return;
                 }
