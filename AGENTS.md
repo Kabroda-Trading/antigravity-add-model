@@ -1,6 +1,6 @@
-# CLAUDE.md — Guidance for Claude Code
+# AGENTS.md — Guidance for Antigravity/DeepSeek
 
-This file is read by **Claude Code** (the agent in VS Code) when working on this project.
+This file is read by **Antigravity** (DeepSeek) when working on this project. Claude Code reads the equivalent `CLAUDE.md` — same content, kept in sync, since each agent only auto-loads its own file.
 
 ## What This Project Is
 
