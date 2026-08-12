@@ -94,6 +94,50 @@ describe('detectModelCapabilities', () => {
     });
     expect(result.isClaude).toBe(true);
   });
+
+  describe('supportsImages', () => {
+    it('explicit config value always wins', () => {
+      expect(
+        detectModelCapabilities({ name: 'llama3', provider: 'ollama', supportsImages: true }).supportsImages,
+      ).toBe(true);
+      expect(
+        detectModelCapabilities({ name: 'gpt-4o', provider: 'openai', supportsImages: false }).supportsImages,
+      ).toBe(false);
+    });
+
+    it('anthropic and google are always true', () => {
+      expect(detectModelCapabilities({ name: 'anything', provider: 'anthropic' }).supportsImages).toBe(true);
+      expect(detectModelCapabilities({ name: 'anything', provider: 'google' }).supportsImages).toBe(true);
+    });
+
+    it('hosted cloud providers default to true, including DeepSeek', () => {
+      expect(
+        detectModelCapabilities({ name: 'deepseek-v4-pro', provider: 'custom', externalModelName: 'deepseek-v4-pro' })
+          .supportsImages,
+      ).toBe(true);
+      expect(detectModelCapabilities({ name: 'deepseek-chat', provider: 'deepseek' }).supportsImages).toBe(true);
+      expect(detectModelCapabilities({ name: 'gpt-4o', provider: 'openai' }).supportsImages).toBe(true);
+    });
+
+    it('hosted cloud providers still default to false for coder/embedding specialists', () => {
+      expect(
+        detectModelCapabilities({ name: 'deepseek-coder', provider: 'custom', externalModelName: 'deepseek-coder' })
+          .supportsImages,
+      ).toBe(false);
+      expect(detectModelCapabilities({ name: 'text-embedding-3-large', provider: 'openai' }).supportsImages).toBe(
+        false,
+      );
+    });
+
+    it('local inference providers default to false unless vision-tagged', () => {
+      expect(detectModelCapabilities({ name: 'llama3', provider: 'ollama' }).supportsImages).toBe(false);
+      expect(
+        detectModelCapabilities({ name: 'llama3.2-vision', provider: 'ollama', externalModelName: 'llama3.2-vision:11b' })
+          .supportsImages,
+      ).toBe(true);
+      expect(detectModelCapabilities({ name: 'qwen2.5-vl', provider: 'lmstudio' }).supportsImages).toBe(true);
+    });
+  });
 });
 
 describe('detectModelCapabilitiesByName', () => {

@@ -7,6 +7,8 @@ export interface CustomModelConfig {
     provider: string;
     externalModelName?: string;
     displayName?: string;
+    /** Explicit override. When unset, capability is inferred per-provider (see detectModelCapabilities). */
+    supportsImages?: boolean;
 }
 export interface ModelCapabilities {
     isThinking: boolean;

@@ -130,6 +130,9 @@ export function validateCustomModel(model: unknown): ValidationResult {
   if (m.allowUnauthorized !== undefined && typeof m.allowUnauthorized !== 'boolean') {
     return { valid: false, error: 'allowUnauthorized must be a boolean' };
   }
+  if (m.supportsImages !== undefined && typeof m.supportsImages !== 'boolean') {
+    return { valid: false, error: 'supportsImages must be a boolean' };
+  }
 
   return { valid: true };
 }
