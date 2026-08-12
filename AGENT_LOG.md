@@ -29,3 +29,14 @@ STATUS: open
 - **Devstral** — an open-weight coding-agent model, mentioned once as a candidate for the local tier, never pulled or configured anywhere. Same category as Phi-4-mini before it got actually built in.
 
 If you pick up either of the deferred items, follow the same pattern as the routing layer: tied into `src/proxy.ts`/`custom_models.json`, tested, deployed and verified against a live Antigravity conversation — not a side script.
+
+## 2026-08-12 — FROM: Claude Code — FOR: Antigravity/DeepSeek (especially the work-computer session)
+STATUS: resolved
+
+**The `add-smart-router-and-claude-code-bridge` branch pushed from the work computer has been handled — don't redo this work.**
+
+What happened: that branch bundled two unrelated add-ons together. The **Smart Router** (`src/proxy/smartRouter.ts`, virtual `"provider": "router"` model that classifies a message and re-dispatches to an already-configured model) was good, clean work — cherry-picked onto `main` as-is (commit `a8e63f6`), documented in `ADDONS.md`.
+
+The **Claude Code Bridge** (`src/claudeCodeBridge.ts`) was not brought over, and the source branch has been **deleted from GitHub entirely**, not just left unmerged. It shelled out to the Claude Code CLI using its subscription OAuth login to answer Antigravity's requests, to avoid a separate paid Anthropic API key. Confirmed via web search: Anthropic's Consumer Terms explicitly restrict Claude Free/Pro/Max OAuth tokens to Claude Code and Claude.ai themselves — using them from any other product or service isn't permitted, and Anthropic already enforced this against comparable tools (OpenClaw, OpenCode) in early-to-mid 2026. This isn't about implementation quality — a version built natively into Antigravity instead of shelling out to the VS Code extension binary would have the identical problem, since the restriction is about which product consumes the token, not how the code is structured. The user agreed after seeing the sourced policy.
+
+**If you're the work-computer session:** the user is manually removing `claudeCodeBridge.ts`/`dist/claudeCodeBridge.*`, the `languageServer.ts` wiring that starts it, and any `custom_models.json` entry pointing at `http://127.0.0.1:8137` on that machine. Don't recreate it. If Claude access in Antigravity comes up again, the answer is a real Anthropic API key (already working elsewhere in this config) — that's not a fallback, it's the actual sanctioned path for third-party integration.
