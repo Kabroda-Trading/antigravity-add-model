@@ -1,5 +1,21 @@
 # Antigravity Custom Model Enabler — Setup Guide
 
+## Quick Fix (read this first)
+
+**Symptom:** You open Antigravity and your custom models are gone from the dropdown — only Gemini/Claude/GPT-OSS show up.
+
+**Cause:** Antigravity auto-updated itself and wiped the patch. This is expected — it happens on every update.
+
+**Fix:**
+1. Go to **[github.com/Kabroda-Trading/antigravity-add-model](https://github.com/Kabroda-Trading/antigravity-add-model)**
+2. Click the green **Code** button → **Download ZIP**
+3. Extract it, right-click **`repatch.bat`** → **Run as administrator**
+4. Wait for "SUCCESS!" — your custom models are back
+
+If Antigravity shows a **black or blank screen** instead (rare, but can happen), run **`RESTORE_IF_BLACK_SCREEN.bat`** first, then `repatch.bat`. Either way, your saved models and API keys are never lost — they're stored separately from the app itself.
+
+---
+
 This package patches **Google Antigravity** to let you use **any AI model** — including local models running on your own machine via Ollama (DeepSeek, Llama, etc.) — alongside the built-in Gemini models.
 
 ## What This Does
