@@ -11,6 +11,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import log from 'electron-log';
 import { resolveEffectiveModel } from './proxy/routing';
+import { resolveRoutedModel } from './proxy/smartRouter';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -1451,14 +1452,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
               `[Proxy][DIAG] tools present: ${toolGroups.length > 0}, functionDeclarations: ${toolCount}, names: ${toolGroups.flatMap((g) => (g.functionDeclarations || []).map((f) => f.name)).join(',')}`,
             );
             resolveFileData(actualGeminiBody, req.headers as Record<string, string | string[] | undefined>).then(() => {
-              const { model: effectiveModel, routed } = resolveEffectiveModel(
-                matchedCustomModel,
-                customModels,
-                actualGeminiBody,
-              );
+              const routedModel = resolveRoutedModel(matchedCustomModel, actualGeminiBody, customModels, log);
+              const { model: effectiveModel, routed } = resolveEffectiveModel(routedModel, customModels, actualGeminiBody);
               if (routed) {
                 log.info(
-                  `[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${matchedCustomModel.displayName} => ${effectiveModel.displayName}`,
+                  `[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${routedModel.displayName} => ${effectiveModel.displayName}`,
                 );
               }
               handleCustomModelRequest(res, effectiveModel, actualGeminiBody, isStream);
@@ -1495,10 +1493,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         try {
           const geminiBody = JSON.parse(bodyStr) as GeminiRequestBody;
           resolveFileData(geminiBody, req.headers as Record<string, string | string[] | undefined>).then(() => {
-            const { model: effectiveModel, routed } = resolveEffectiveModel(matchedCustomModel, customModels, geminiBody);
+            const routedModel = resolveRoutedModel(matchedCustomModel, geminiBody, customModels, log);
+            const { model: effectiveModel, routed } = resolveEffectiveModel(routedModel, customModels, geminiBody);
             if (routed) {
               log.info(
-                `[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${matchedCustomModel.displayName} => ${effectiveModel.displayName}`,
+                `[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${routedModel.displayName} => ${effectiveModel.displayName}`,
               );
             }
             handleCustomModelRequest(res, effectiveModel, geminiBody, isStandardStream);

@@ -51,6 +51,7 @@ const path = __importStar(require("path"));
 const electron_1 = require("electron");
 const electron_log_1 = __importDefault(require("electron-log"));
 const routing_1 = require("./proxy/routing");
+const smartRouter_1 = require("./proxy/smartRouter");
 // ─── Imports ──────────────────────────────────────────────────────────────
 let server = null;
 let proxyPort = 0;
@@ -1316,9 +1317,10 @@ function handleRequest(req, res) {
                         const toolCount = toolGroups.reduce((n, g) => n + (g.functionDeclarations?.length || 0), 0);
                         electron_log_1.default.info(`[Proxy][DIAG] tools present: ${toolGroups.length > 0}, functionDeclarations: ${toolCount}, names: ${toolGroups.flatMap((g) => (g.functionDeclarations || []).map((f) => f.name)).join(',')}`);
                         resolveFileData(actualGeminiBody, req.headers).then(() => {
-                            const { model: effectiveModel, routed } = (0, routing_1.resolveEffectiveModel)(matchedCustomModel, customModels, actualGeminiBody);
+                            const routedModel = (0, smartRouter_1.resolveRoutedModel)(matchedCustomModel, actualGeminiBody, customModels, electron_log_1.default);
+                            const { model: effectiveModel, routed } = (0, routing_1.resolveEffectiveModel)(routedModel, customModels, actualGeminiBody);
                             if (routed) {
-                                electron_log_1.default.info(`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${matchedCustomModel.displayName} => ${effectiveModel.displayName}`);
+                                electron_log_1.default.info(`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${routedModel.displayName} => ${effectiveModel.displayName}`);
                             }
                             handleCustomModelRequest(res, effectiveModel, actualGeminiBody, isStream);
                         });
@@ -1349,9 +1351,10 @@ function handleRequest(req, res) {
                 try {
                     const geminiBody = JSON.parse(bodyStr);
                     resolveFileData(geminiBody, req.headers).then(() => {
-                        const { model: effectiveModel, routed } = (0, routing_1.resolveEffectiveModel)(matchedCustomModel, customModels, geminiBody);
+                        const routedModel = (0, smartRouter_1.resolveRoutedModel)(matchedCustomModel, geminiBody, customModels, electron_log_1.default);
+                        const { model: effectiveModel, routed } = (0, routing_1.resolveEffectiveModel)(routedModel, customModels, geminiBody);
                         if (routed) {
-                            electron_log_1.default.info(`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${matchedCustomModel.displayName} => ${effectiveModel.displayName}`);
+                            electron_log_1.default.info(`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ${routedModel.displayName} => ${effectiveModel.displayName}`);
                         }
                         handleCustomModelRequest(res, effectiveModel, geminiBody, isStandardStream);
                     });
