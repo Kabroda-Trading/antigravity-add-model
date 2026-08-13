@@ -137,7 +137,11 @@ function loadCustomModels() {
         return cryptoStore.decryptModels(defaultModels.models);
     }
     try {
-        const content = fs.readFileSync(filePath, 'utf-8');
+        // Strip a leading UTF-8 BOM if present - Node decodes it as ﻿ rather
+        // than stripping it, and JSON.parse rejects it outright. Common source:
+        // Windows PowerShell 5.1's `Set-Content -Encoding UTF8` (unlike 7+, it
+        // writes a BOM by default) or just saving the file with Notepad.
+        const content = fs.readFileSync(filePath, 'utf-8').replace(/^﻿/, '');
         const parsed = JSON.parse(content);
         const models = parsed.models || [];
         // Auto-migration check
