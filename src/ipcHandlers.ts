@@ -160,7 +160,12 @@ export function registerIpcHandlers(storageManager: StorageManager): void {
       }
 
       if (existingIdx !== -1) {
-        models[existingIdx] = newModel;
+        // Merge rather than replace: the Settings UI form only knows about
+        // the fields it displays (name, provider, API key, etc.) - fields
+        // added directly to custom_models.json by hand or by another tool
+        // (localFastTier, allowOrchestrationTools, ...) aren't part of that
+        // form and would otherwise get silently dropped on every edit.
+        models[existingIdx] = { ...models[existingIdx], ...newModel };
       } else {
         models.push(newModel);
       }
