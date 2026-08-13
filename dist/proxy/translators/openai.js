@@ -70,14 +70,14 @@ const ORCHESTRATION_ONLY_TOOLS = new Set([
     'manage_task',
     'schedule',
 ]);
-function mapGeminiToolsToOpenAI(geminiTools) {
+function mapGeminiToolsToOpenAI(geminiTools, allowOrchestrationTools = false) {
     if (!geminiTools || !Array.isArray(geminiTools))
         return [];
     const openaiTools = [];
     for (const toolGroup of geminiTools) {
         if (toolGroup.functionDeclarations && Array.isArray(toolGroup.functionDeclarations)) {
             for (const func of toolGroup.functionDeclarations) {
-                if (ORCHESTRATION_ONLY_TOOLS.has(func.name))
+                if (!allowOrchestrationTools && ORCHESTRATION_ONLY_TOOLS.has(func.name))
                     continue;
                 const params = func.parameters
                     ? JSON.parse(JSON.stringify(func.parameters))
@@ -113,7 +113,7 @@ const WINDOWS_PATH_REMINDER = '\n\nIMPORTANT: This system is Windows, not Linux/
     'Never use Unix-style paths like /home/user/... or /Users/... or /path/to/... - they do not exist on this system ' +
     'and any command or tool call using one will fail. If you do not know the exact path, use a tool to look it up ' +
     '(e.g. list a parent directory) rather than guessing a placeholder path.';
-function mapGeminiToOpenAI(geminiBody, modelName, provider) {
+function mapGeminiToOpenAI(geminiBody, modelName, provider, allowOrchestrationTools = false) {
     const messages = [];
     if (geminiBody.systemInstruction && geminiBody.systemInstruction.parts) {
         let systemText = geminiBody.systemInstruction.parts.map((p) => p.text || '').join('');
@@ -269,7 +269,7 @@ function mapGeminiToOpenAI(geminiBody, modelName, provider) {
         ...(needsCompletionTokens ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
     };
     if (geminiBody.tools && Array.isArray(geminiBody.tools)) {
-        const openaiTools = mapGeminiToolsToOpenAI(geminiBody.tools);
+        const openaiTools = mapGeminiToolsToOpenAI(geminiBody.tools, allowOrchestrationTools);
         if (openaiTools.length > 0)
             payload.tools = openaiTools;
     }

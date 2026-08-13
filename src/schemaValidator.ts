@@ -136,6 +136,9 @@ export function validateCustomModel(model: unknown): ValidationResult {
   if (m.localFastTier !== undefined && typeof m.localFastTier !== 'string') {
     return { valid: false, error: 'localFastTier must be a string' };
   }
+  if (m.allowOrchestrationTools !== undefined && typeof m.allowOrchestrationTools !== 'boolean') {
+    return { valid: false, error: 'allowOrchestrationTools must be a boolean' };
+  }
 
   return { valid: true };
 }

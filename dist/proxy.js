@@ -359,7 +359,7 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
     const MAX_RETRIES = Math.min(Math.max(model.maxRetries ?? 3, 0), 5);
     const REQUEST_TIMEOUT_MS = model.timeout || 120000;
     const provider = model.provider === 'custom' || model.provider === 'openrouter' ? 'openai' : model.provider;
-    const payload = registry.translateRequest(provider, geminiBody, model.externalModelName);
+    const payload = registry.translateRequest(provider, geminiBody, model.externalModelName, model.allowOrchestrationTools);
     const headers = registry.getProviderHeaders(provider, model.apiKey);
     if (isStream && registry.supportsStreaming(provider)) {
         payload.stream = true;

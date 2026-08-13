@@ -8,7 +8,7 @@
  *   3. The registry detects it automatically — no config changes needed.
  */
 export interface TranslatorModule {
-    mapGeminiToOpenAI?: (body: unknown, modelName: string, provider?: string) => unknown;
+    mapGeminiToOpenAI?: (body: unknown, modelName: string, provider?: string, allowOrchestrationTools?: boolean) => unknown;
     mapOpenAIToGemini?: (res: unknown, modelName: string) => unknown;
     mapOpenAIChunkToGemini?: (chunk: unknown, modelName: string) => unknown | null;
     mapGeminiToAnthropic?: (body: unknown, modelName: string) => unknown;
@@ -31,7 +31,7 @@ export interface ProviderHeaders {
     [key: string]: string | undefined;
 }
 export declare function getTranslator(provider: string): TranslatorModule | null;
-export declare function translateRequest(provider: string, geminiBody: unknown, modelName: string): unknown;
+export declare function translateRequest(provider: string, geminiBody: unknown, modelName: string, allowOrchestrationTools?: boolean): unknown;
 export declare function translateResponse(provider: string, providerRes: unknown, modelName: string): unknown;
 export declare function translateStreamChunk(provider: string, chunk: unknown, modelName: string): unknown;
 export declare function getProviderHeaders(provider: string, apiKey: string): ProviderHeaders;

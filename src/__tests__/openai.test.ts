@@ -121,6 +121,41 @@ describe('mapGeminiToOpenAI', () => {
     expect((result.tools![0].function.parameters as Record<string, string>).type).toBe('object');
   });
 
+  it('should withhold orchestration-only tools by default', () => {
+    const body = {
+      contents: [],
+      tools: [
+        {
+          functionDeclarations: [
+            { name: 'get_weather', description: 'Get weather', parameters: { type: 'OBJECT', properties: {} } },
+            { name: 'invoke_subagent', description: 'Invoke a subagent', parameters: { type: 'OBJECT', properties: {} } },
+            { name: 'send_message', description: 'Send a message', parameters: { type: 'OBJECT', properties: {} } },
+          ],
+        },
+      ],
+    };
+    const result = mapGeminiToOpenAI(body, 'gpt-4o');
+    expect(result.tools).toHaveLength(1);
+    expect(result.tools![0].function.name).toBe('get_weather');
+  });
+
+  it('should include orchestration tools when allowOrchestrationTools is true', () => {
+    const body = {
+      contents: [],
+      tools: [
+        {
+          functionDeclarations: [
+            { name: 'get_weather', description: 'Get weather', parameters: { type: 'OBJECT', properties: {} } },
+            { name: 'invoke_subagent', description: 'Invoke a subagent', parameters: { type: 'OBJECT', properties: {} } },
+          ],
+        },
+      ],
+    };
+    const result = mapGeminiToOpenAI(body, 'deepseek-v4-flash', 'custom', true);
+    expect(result.tools).toHaveLength(2);
+    expect(result.tools!.map((t) => t.function.name)).toContain('invoke_subagent');
+  });
+
   it('should include reasoning_content on assistant messages', () => {
     const body = {
       contents: [

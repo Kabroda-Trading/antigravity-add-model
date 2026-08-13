@@ -196,13 +196,13 @@ const ORCHESTRATION_ONLY_TOOLS = new Set([
   'schedule',
 ]);
 
-function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[]): OpenAITool[] {
+function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[], allowOrchestrationTools = false): OpenAITool[] {
   if (!geminiTools || !Array.isArray(geminiTools)) return [];
   const openaiTools: OpenAITool[] = [];
   for (const toolGroup of geminiTools) {
     if (toolGroup.functionDeclarations && Array.isArray(toolGroup.functionDeclarations)) {
       for (const func of toolGroup.functionDeclarations) {
-        if (ORCHESTRATION_ONLY_TOOLS.has(func.name)) continue;
+        if (!allowOrchestrationTools && ORCHESTRATION_ONLY_TOOLS.has(func.name)) continue;
         const params = func.parameters
           ? (JSON.parse(JSON.stringify(func.parameters)) as Record<string, unknown>)
           : { type: 'object', properties: {} };
@@ -240,7 +240,12 @@ const WINDOWS_PATH_REMINDER =
   'and any command or tool call using one will fail. If you do not know the exact path, use a tool to look it up ' +
   '(e.g. list a parent directory) rather than guessing a placeholder path.';
 
-export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: string, provider?: string): OpenAIRequestBody {
+export function mapGeminiToOpenAI(
+  geminiBody: GeminiRequestBody,
+  modelName: string,
+  provider?: string,
+  allowOrchestrationTools = false,
+): OpenAIRequestBody {
   const messages: OpenAIMessage[] = [];
 
   if (geminiBody.systemInstruction && geminiBody.systemInstruction.parts) {
@@ -391,7 +396,7 @@ export function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: stri
   };
 
   if (geminiBody.tools && Array.isArray(geminiBody.tools)) {
-    const openaiTools = mapGeminiToolsToOpenAI(geminiBody.tools);
+    const openaiTools = mapGeminiToolsToOpenAI(geminiBody.tools, allowOrchestrationTools);
     if (openaiTools.length > 0) payload.tools = openaiTools;
   }
 

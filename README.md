@@ -520,6 +520,7 @@ Here is an example of a **fully loaded** `custom_models.json` file configuring *
 | `timeout` | (Optional) Request timeout in milliseconds. Default: `120000` (2 minutes). |
 | `maxRetries` | (Optional) Maximum retry attempts for rate-limited/failed requests. Default: `3`. |
 | `localFastTier` | (Optional) `name` of another configured model to automatically route pure tool-call-result turns to (e.g. "here's the file content you asked for" with no new reasoning). The rest of the conversation - the initial request, anything with fresh text, final answers - stays on this model. Only fires when the referenced model exists; otherwise silently ignored. |
+| `allowOrchestrationTools` | (Optional) Set to `true` to let this model use Antigravity's multi-agent orchestration tools (`invoke_subagent`, `define_subagent`, `manage_subagents`, `send_message`, `manage_task`, `schedule`). Off by default for every model on the OpenAI-compatible path (`openai`/`custom`/`ollama`/`openrouter`) - smaller local models were observed misusing these and looping on rejected calls. `anthropic`/`google` models were never restricted. Turn this on per model for cloud-scale models (DeepSeek, GPT-4o, etc.) that can actually use them correctly. Default: `false`. |
 
 ### Local Fast-Tier Routing
 
