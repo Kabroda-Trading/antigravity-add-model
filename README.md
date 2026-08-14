@@ -548,6 +548,9 @@ If you configure a cloud model with `localFastTier` pointing at a local Ollama m
 
 Routing decisions are logged (`[Proxy][Routing] Tool-continuation detected, routing to fast tier: ...`) in the same log file referenced in Troubleshooting, so you can confirm it's actually firing.
 
+> [!WARNING]
+> **Don't combine `localFastTier` with `allowOrchestrationTools` on the same model.** Sub-agent orchestration spawns multiple agents working in parallel, each independently hitting the same `localFastTier` target for their own tool-continuation turns. One local Ollama instance can't absorb that concurrency - confirmed in practice: several sub-agents piling onto one local model produced repeated timeouts/retries on the local endpoint and eventually `Upstream connection error: aborted`, which looked like general slowness/instability but was actually local-server contention. `localFastTier` was designed around a single agent's sequential tool loop, not multiple parallel agents. If you want both capabilities on one model, drop `localFastTier` for now - it needs a concurrency-aware redesign before it's safe to run alongside orchestration.
+
 ## UI Features
 
 ### Add Model Modal
