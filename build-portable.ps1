@@ -13,9 +13,12 @@ Write-Host "============================================" -ForegroundColor Cyan
 if (Test-Path $PortableDir) { Remove-Item $PortableDir -Recurse -Force }
 New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
 
-# 1. Copy deploy script
-Write-Host "[1/5] Copying deploy script..." -ForegroundColor Yellow
+# 1. Copy deploy script + auto-repair/launch-wrapper scripts
+Write-Host "[1/5] Copying deploy + auto-repair scripts..." -ForegroundColor Yellow
 Copy-Item (Join-Path $ScriptDir "portable-deploy.ps1") $PortableDir -Force
+Copy-Item (Join-Path $ScriptDir "ensure-patched.ps1") $PortableDir -Force
+Copy-Item (Join-Path $ScriptDir "launch-antigravity.bat") $PortableDir -Force
+Copy-Item (Join-Path $ScriptDir "install-launch-wrapper.ps1") $PortableDir -Force
 Write-Host "   OK" -ForegroundColor Green
 
 # 2. Copy dist
@@ -68,12 +71,17 @@ HOW TO INSTALL:
   1. Right-click "portable-deploy.ps1"
   2. Select "Run with PowerShell"
   3. Let it finish (takes about 30 seconds)
-  4. Start Antigravity
-  5. Go to Settings -> Models
-  6. Your custom models should appear in the dropdown
+  4. Right-click "install-launch-wrapper.ps1" -> Run with PowerShell
+     (one-time - makes opening Antigravity check the patch first)
+  5. Start Antigravity
+  6. Go to Settings -> Models
+  7. Your custom models should appear in the dropdown
 
 AFTER ANTIGRAVITY UPDATES:
-  Just run portable-deploy.ps1 again.
+  Nothing to do by hand - step 4 above means opening Antigravity from
+  the Start Menu now checks and re-applies the patch automatically
+  every time, before the window even shows up. If you ever skip step 4,
+  just run portable-deploy.ps1 again manually instead.
 
 NO ADMIN REQUIRED - everything runs in your user folder.
 

@@ -396,6 +396,18 @@ bash deploy_linux.sh  # Linux
 > [!IMPORTANT]
 > **You must redeploy after every Antigravity update.** The update replaces `language_server.exe` with a clean version, removing the binary patch. Running `deploy.ps1` re-applies the patch automatically.
 
+### Never Think About This Again (Windows)
+
+Instead of remembering to redeploy by hand, run `install-launch-wrapper.ps1` once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ".\install-launch-wrapper.ps1"
+```
+
+This repoints your Antigravity Start Menu shortcut at `launch-antigravity.bat`, which runs a sub-second patch check (`ensure-patched.ps1`) before actually opening Antigravity - so the moment you reopen it after an update, it silently re-patches first if needed. No admin required (it only edits your own user Start Menu shortcut), and it works identically whether you're on the admin (`deploy.ps1`) or portable/no-admin (`portable-deploy.ps1`) install - `ensure-patched.ps1` detects which one is present.
+
+An alternative timer-based scheduled task (`install-auto-repair-task.ps1`) also exists in the repo, but isn't installed by default - Task Scheduler launching PowerShell causes a brief visible console flash every interval, which is disruptive during real use. Only reach for it if you launch Antigravity some way that bypasses the Start Menu shortcut.
+
 ### How to Check if the Patch is Active
 
 Check the Language Server log after startup:

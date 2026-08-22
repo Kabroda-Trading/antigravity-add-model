@@ -14,9 +14,15 @@ if (Test-Path $LsBinary) {
 }
 
 if ($needsPatch) {
-    $deployScript = Join-Path $PSScriptRoot "deploy.ps1"
+    # Admin install ships deploy.ps1; the portable/non-admin package only
+    # ever has portable-deploy.ps1 (build-portable.ps1 doesn't copy the
+    # admin one over) - use whichever is actually present so this one
+    # script works unmodified in both packages.
+    $adminDeploy = Join-Path $PSScriptRoot "deploy.ps1"
+    $portableDeploy = Join-Path $PSScriptRoot "portable-deploy.ps1"
+    $deployScript = if (Test-Path $adminDeploy) { $adminDeploy } else { $portableDeploy }
     $log = Join-Path $PSScriptRoot "ensure-patched.log"
-    "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Patch missing, running deploy.ps1..." | Out-File $log -Append
+    "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Patch missing, running $(Split-Path $deployScript -Leaf)..." | Out-File $log -Append
     & powershell -ExecutionPolicy Bypass -File $deployScript *>> $log
 } else {
     $log = Join-Path $PSScriptRoot "ensure-patched.log"
