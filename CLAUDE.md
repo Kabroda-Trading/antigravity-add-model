@@ -36,5 +36,6 @@ Short version as of 2026-08-12:
 
 ## Important Notes
 
-- The modded Antigravity must **survive updates** — Google overwrites patches. `deploy.ps1`/`portable-deploy.ps1` re-apply them and now self-refresh their backup when Antigravity's version changes. `ensure-patched.ps1` + the scheduled task from `install-auto-repair-task.ps1` do this automatically on a 2-hour check, without interrupting an active session.
+- The modded Antigravity must **survive updates** — Google overwrites patches. `deploy.ps1`/`portable-deploy.ps1` re-apply them and now self-refresh their backup when Antigravity's version changes.
+- **Default auto-repair mechanism is the launch wrapper** (`launch-antigravity.bat` + `install-launch-wrapper.ps1`), not a scheduled task. It repoints the Start Menu shortcut so opening Antigravity runs `ensure-patched.ps1` first (sub-second if nothing's needed) - this checks "on open" rather than on a timer, matching how people actually use it. The scheduled task (`install-auto-repair-task.ps1`) still exists in the repo but is **not installed by default anymore** - Task Scheduler launching PowerShell causes a brief visible console flash every interval (a Windows quirk, not fixable by `-WindowStyle Hidden` alone) which was disruptive during real use. Only suggest re-adding the scheduled task if someone specifically launches Antigravity through a path that bypasses the Start Menu shortcut (a taskbar pin created before the repoint, etc.) and wants the redundancy despite the flash.
 - If anything seems ambiguous, **ask for clarification**.

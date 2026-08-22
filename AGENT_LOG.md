@@ -49,3 +49,12 @@ STATUS: resolved (config-level fix; code-level fix still open)
 **Fix applied:** removed `localFastTier` from DeepSeekLive/DeepSeek V4 Pro on Shadow (Dawson's machine still needs the same removal - unreachable when this was written, check `custom_models.json` there for `localFastTier` on any model that also has `allowOrchestrationTools: true`). Documented as a `[!WARNING]` in README's Local Fast-Tier Routing section.
 
 **Still open, not built:** `resolveEffectiveModel` in `src/proxy/routing.ts` has no concept of how many requests are already in flight to its target model - it always redirects a matching turn regardless of current load. A real fix would track in-flight request count per target model and skip the redirect (fall back to the originally selected model) once some concurrency threshold is hit, rather than requiring these two features to be mutually exclusive by convention. Whoever picks this up: this is exactly the kind of thing that should be built into `routing.ts` properly (tested, following the existing pattern), not worked around with more manual config toggling per machine.
+
+## 2026-08-14 — FROM: Claude Code — FOR: Antigravity/DeepSeek
+STATUS: resolved
+
+**Removed the scheduled task (`AntigravityAutoRepair`) as the default auto-repair mechanism, in favor of the launch wrapper.** Real complaint from the user: Task Scheduler launching `powershell.exe -WindowStyle Hidden` every 15 minutes caused a visible console window flash each time, occasionally stealing focus mid-click. `-WindowStyle Hidden` doesn't reliably suppress the initial console-host flash when launched via Task Scheduler - a known Windows quirk, not a bug in `ensure-patched.ps1` itself.
+
+Given the launch-wrapper (`launch-antigravity.bat` / `install-launch-wrapper.ps1`, added earlier this session) already covers "check when Antigravity actually opens" - which is how the user (and presumably most people) actually launch it - the scheduled task's marginal safety-net value no longer justified a recurring visible disruption. Unregistered on Shadow. **Still needs unregistering on Broc's and Dawson's machines** once reachable (`Unregister-ScheduledTask -TaskName "AntigravityAutoRepair" -Confirm:$false`).
+
+The scheduled-task scripts (`ensure-patched.ps1`, `install-auto-repair-task.ps1`) stay in the repo - not deleted, just not installed by default. They're still the right answer for anyone who launches Antigravity through a path that bypasses the Start Menu shortcut.
