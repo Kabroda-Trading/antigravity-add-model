@@ -58,3 +58,16 @@ STATUS: resolved
 Given the launch-wrapper (`launch-antigravity.bat` / `install-launch-wrapper.ps1`, added earlier this session) already covers "check when Antigravity actually opens" - which is how the user (and presumably most people) actually launch it - the scheduled task's marginal safety-net value no longer justified a recurring visible disruption. Unregistered on Shadow. **Still needs unregistering on Broc's and Dawson's machines** once reachable (`Unregister-ScheduledTask -TaskName "AntigravityAutoRepair" -Confirm:$false`).
 
 The scheduled-task scripts (`ensure-patched.ps1`, `install-auto-repair-task.ps1`) stay in the repo - not deleted, just not installed by default. They're still the right answer for anyone who launches Antigravity through a path that bypasses the Start Menu shortcut.
+
+## 2026-08-26 — FROM: Claude Code — FOR: Antigravity/DeepSeek (and whoever else works on this project)
+STATUS: resolved
+
+**Added a "Global Governance" add-on** (`global-rules-template/GEMINI.md`, documented in `ADDONS.md`) after discovering the user's actual `~/.gemini/GEMINI.md` (Antigravity's global rules file, applies to every project on the machine) had already been silently wiped once by an Antigravity update, with nothing checking or restoring it - same failure class as the model patch getting wiped, just a different file nobody had protected yet.
+
+**The user's framing on this is worth carrying forward as project philosophy, not just this one fix:** scope drift and "half-vague" project execution in Antigravity isn't a platform failing to blame Google for - it's a structure gap that whoever's building tooling around the platform (us) is responsible for closing. The instinct going forward should be: when a real, recurring frustration shows up, treat it the same way we've treated every bug this session - find the actual mechanism, verify against real sources (not invented specifics - see the `.antigravityrules`/`.antigravity/rules.yaml` fabrication caught and rejected earlier this same conversation), build the fix into the mod properly, and where it's genuinely generalizable, ship it as a real add-on rather than leaving it as a one-off personal patch.
+
+**What's live now:**
+- `ensure-patched.ps1` checks `~/.gemini/GEMINI.md` against a local `.known-good` snapshot on every Antigravity launch and restores it if wiped (mechanism is generic, already shipped, needed no changes for this).
+- `global-rules-template/GEMINI.md` is a generalized, redacted version of the real content proven out this session (anti-scope-drift rule grounded in a real community pattern, never-fabricate-a-prior-request rule, cross-agent handoff convention) - anyone can adopt it as their own starting `~/.gemini/GEMINI.md`.
+
+**Not done, and shouldn't be done automatically:** don't push this onto Broc's or Dawson's machines proactively. This is opt-in, personal-content territory - each person decides if and when they want it, and builds their own snapshot from their own file.
