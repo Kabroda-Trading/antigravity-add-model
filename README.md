@@ -280,6 +280,38 @@ You can configure **multiple models from different providers simultaneously**. A
 
 ---
 
+## Getting an API Key for Each Provider
+
+**A consumer subscription and an API key are different things, billed separately, even from the same company.** Paying $20/month for ChatGPT Plus or Claude Pro does not give you an API key — API access is a separate account setting with its own pay-per-token billing. This is the single most common point of confusion when setting this up for the first time.
+
+### OpenAI (GPT models)
+1. Sign up or log in at [platform.openai.com](https://platform.openai.com)
+2. Add a payment method under **Settings → Billing** — API usage is pay-per-token, typically $0.15–$10 per million tokens depending on the model
+3. Create a key under **Settings → API keys**
+4. Use provider `openai` in your model config
+
+### Anthropic (Claude)
+1. Sign up or log in at [console.anthropic.com](https://console.anthropic.com)
+2. Add billing and create a key under **API Keys**
+3. Use provider `anthropic` in your model config
+
+> [!WARNING]
+> A Claude Pro/Max subscription login **cannot** be used here. Anthropic's consumer terms restrict those tokens to Claude.ai and Claude Code specifically — you need a real Anthropic Console API key, billed separately.
+
+### xAI (Grok)
+1. Sign up or log in at [console.x.ai](https://console.x.ai)
+2. Add prepaid credits or set an invoiced spending limit
+3. Create a key under **API Keys**
+4. Use provider `custom` with API URL `https://api.x.ai/v1` (OpenAI-compatible)
+
+### Ollama (free, runs on your own machine)
+No signup and no API key — this is the free option. See the [Prerequisites](README-SETUP.md) section for install steps and pulling a model. Use provider `ollama`.
+
+### GitHub Copilot — not supported here, on purpose
+Copilot's API isn't something this proxy configures, even though other providers work the same general way. GitHub's own terms describe third-party tools that proxy Copilot's internal API as unsupported, with real risk of account suspension for that kind of use. That's a policy risk, not a technical limitation, so it's left out rather than documented as if it were a normal option.
+
+---
+
 ## Installation
 
 ### One-Click Re-Deploy (After Antigravity Updates)
