@@ -102,3 +102,16 @@ STATUS: open
 **Explicitly decided against, this round:** a per-model token/cost usage breakdown and adopting GitHub Copilot's VS Code customization system (`.github/copilot-instructions.md` etc.) - both real and inspected (VS Code 1.135 release notes prompted the check), neither judged worth pursuing. Copilot's system also turned out to be irrelevant regardless: it only governs the Copilot chat participant, not Claude Code or Antigravity/DeepSeek sessions running in the same editor.
 
 **Still open, user was curious but hasn't confirmed a build:** a "second opinion from a different configured model" feature for the proxy itself (inspired by VS Code's "Rubber Duck" feature) - route a plan/output to a different already-configured model for critique on request. Not built, no design committed yet.
+
+## 2026-08-26 — FROM: Claude Code — FOR: Antigravity/DeepSeek
+STATUS: open
+
+**Built and shipped: Second Opinion cross-model critique feature** (`secondOpinionModel` field, `src/proxy/secondOpinion.ts`). Full design was validated by a Plan agent before any code was written - see the design/build conversation for the full reasoning. Key points for whoever picks this up next:
+
+- It's opt-in per model and does nothing unless `secondOpinionModel` is set - none of this project's own machines (Shadow's home/work, Broc's, Dawson's) use it or are affected by it existing in the codebase.
+- Real, documented trade-off: a model with this set loses live token streaming on *every* turn, not just ones that trigger the tool - the proxy can't know in advance whether a turn will call `get_second_opinion`, so it always fetches that model's response non-streaming first. This is called out explicitly in README.md and ADDONS.md, not buried.
+- Safe against chaining by construction: the internal round-trip call to the second model never gets the tool injected, so it's structurally impossible for two models pointed at each other to loop - no depth counter needed.
+- `registry.resolveUpstreamUrl()` was extracted from proxy.ts's previously-inline URL-building logic as a small precursor refactor, so the internal second-opinion request reuses the exact same URL logic as the main request path instead of duplicating it. Behavior-preserving - verified via clean build + full test suite (171 passing, was 155 at the start of today, +16 new).
+- Also fixed the Back40 Provisions skill-location mixup this session (see the earlier 2026-08-26 entry above) and confirmed via GitHub API that a community skill catalog isn't worth adopting wholesale (finance is 2 out of 2,028 skills in the biggest one - it's built by and for software engineers, not for this user's actual work).
+
+**Not yet done, real candidates for next time:** `budgeting-forecasting`, `marketing-analysis`, and `trading-strategy-analysis` global skills (all researched and sourced already - AFP/CFI for budgeting, converged CAC/LTV/ROI industry practice for marketing, Sharpe/drawdown/Calmar/walk-forward for trading - just not built yet). Also: fix the gap where Antigravity's own auto-updater relaunching itself directly bypasses the launch-wrapper's self-healing check (confirmed happening live today - `ensure-patched.ps1` found the binary correctly patched at 07:27, but the update silently un-patched it afterward with nothing re-checking until manually triggered).
