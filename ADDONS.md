@@ -76,3 +76,89 @@ The snapshot is intentionally never committed to this repo - it's your
 own instruction content, personal to your setup, not something to push
 onto anyone else's machine. Each person who wants this protection creates
 their own snapshot from their own file.
+
+## Task-Specific Skills (writing, and more over time)
+
+The problem this solves: `GEMINI.md` covers *global behavior* (don't drift,
+handle handoffs correctly), but it doesn't give the agent task-specific
+expertise - e.g. actually knowing real technical-writing standards when
+asked to draft documentation, rather than defaulting to generic chat prose.
+
+Antigravity has a real, built-in mechanism for exactly this: **Skills**
+(`skills/<name>/SKILL.md`), which live at a genuinely global scope -
+`~/.gemini/config/skills/` - confirmed directly from Antigravity's own
+bundled documentation (`agy-customizations` builtin skill, present on every
+install). A skill placed there is available in *every* project automatically,
+same as `GEMINI.md`, with no per-project setup. The `description` field in
+its frontmatter is what the agent matches your request against to decide
+whether to load it - keep that field specific about what the skill does and
+when to use it.
+
+**Setup (one-time, per machine):**
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.gemini\config\skills\writing-documentation"
+Copy-Item "global-rules-template\skills\writing-documentation\SKILL.md" "$env:USERPROFILE\.gemini\config\skills\writing-documentation\SKILL.md"
+```
+
+**`writing-documentation`** - the first one shipped here - applies real,
+citable technical-writing standards (Google Developer Documentation Style
+Guide, Microsoft Writing Style Guide) whenever you ask for a how-to page,
+README content, release notes, or similar: active voice/second person, lead
+with what matters, no chat-style preamble or sign-off, no padding sections,
+no fabricated-sounding filler when something isn't actually known. Test it
+by asking for something like "write a how-to page for X" and checking the
+output starts directly with a title, not "Sure, here's a guide!"
+
+**`project-scaffolding`** - answers "how do I not have to manually set up
+every new project?" Trigger it by opening a new/empty folder as an
+Antigravity project and saying something like "let's start a new project"
+or "help me set this up." It runs a short framing conversation (what is
+this, who's it for, what does the first milestone look like, any known
+constraints), and only once you've actually confirmed that framing does it
+scaffold the project - `AGENT_LOG.md`, `CLAUDE.md`/`AGENTS.md` filled in
+with your real answers (not just boilerplate), and `.agents/rules/`,
+`.agents/skills/`, `.agents/agents/` created if the project needs its own
+domain-specific customizations. It explicitly never writes project-specific
+content into global config - that mistake is what caused the cleanup this
+skill exists partly to prevent (see the warning below). It bundles its own
+copy of the cross-agent scaffolding script, so it works standalone on a
+machine that doesn't have `new-agent-project.ps1` installed separately.
+
+More task-specific skills (e.g. a research skill, a financial-analysis
+skill for P&L/KPI work) can follow the same pattern - one folder per skill
+under `global-rules-template/skills/`, each with its own `SKILL.md`, each
+copied into `~/.gemini/config/skills/` to activate.
+
+**On not having to pick a skill by hand:** skills don't require manually
+opening the slash menu every time. Per Antigravity's own bundled
+documentation (`agy-customizations` builtin skill), the agent reads a
+skill's `description` field and decides on its own whether to activate it
+for whatever you actually typed - the slash menu is a manual override, not
+the only way in. The lever for "this should just work without babysitting"
+is writing specific, concrete trigger language into `description` (what
+kind of request this is for, in the user's own words), not adding more
+manual steps. The same applies to `.agents/rules/*.md` files, which support
+a `trigger` field with four modes: `always_on`, `model_decision` (same
+auto-match behavior as skills), `glob` (fires on matching file paths, e.g.
+`*.sql`), and `manual` (only on explicit @-mention) - prefer
+`model_decision` or `glob` over `always_on` for anything that doesn't need
+to be in context on every single turn.
+
+⚠️ **Global skills are global the moment they exist - check what's actually
+in that folder.** A skill dropped into `~/.gemini/config/skills/` shows up
+in *every* project's menu immediately, whether that's what was intended or
+not. Confirmed in practice: a set of skills built for one specific business
+project ended up in the global folder instead of that project's own
+`.agents/skills/` - meaning they were showing up (and cluttering the picker)
+in every other project too, not just the one they were meant for. Moving
+project-specific skills to the project's own `.agents/skills/` fixes that;
+only put something in the global folder if you actually want it available
+everywhere.
+
+Separately, a few of those skills instructed the agent to call a
+`local agent bridge` HTTP endpoint (`127.0.0.1:11435`) that doesn't exist
+anywhere in this proxy - unrelated to their location, that's just broken
+content that would fail if actually invoked. Worth checking any
+model-routing skill's actual instructions before trusting it, regardless of
+which folder it's in.
