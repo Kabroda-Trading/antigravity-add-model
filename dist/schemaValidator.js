@@ -136,6 +136,9 @@ function validateCustomModel(model) {
     if (m.allowOrchestrationTools !== undefined && typeof m.allowOrchestrationTools !== 'boolean') {
         return { valid: false, error: 'allowOrchestrationTools must be a boolean' };
     }
+    if (m.secondOpinionModel !== undefined && typeof m.secondOpinionModel !== 'string') {
+        return { valid: false, error: 'secondOpinionModel must be a string' };
+    }
     return { valid: true };
 }
 /**

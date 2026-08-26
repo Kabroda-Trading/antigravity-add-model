@@ -565,6 +565,7 @@ Here is an example of a **fully loaded** `custom_models.json` file configuring *
 | `maxRetries` | (Optional) Maximum retry attempts for rate-limited/failed requests. Default: `3`. |
 | `localFastTier` | (Optional) `name` of another configured model to automatically route pure tool-call-result turns to (e.g. "here's the file content you asked for" with no new reasoning). The rest of the conversation - the initial request, anything with fresh text, final answers - stays on this model. Only fires when the referenced model exists; otherwise silently ignored. |
 | `allowOrchestrationTools` | (Optional) Set to `true` to let this model use Antigravity's multi-agent orchestration tools (`invoke_subagent`, `define_subagent`, `manage_subagents`, `send_message`, `manage_task`, `schedule`). Off by default for every model on the OpenAI-compatible path (`openai`/`custom`/`ollama`/`openrouter`) - smaller local models were observed misusing these and looping on rejected calls. `anthropic`/`google` models were never restricted. Turn this on per model for cloud-scale models (DeepSeek, GPT-4o, etc.) that can actually use them correctly. Default: `false`. |
+| `secondOpinionModel` | (Optional) `name` of another configured model to consult for a critique before finalizing an answer, via a proxy-synthesized `get_second_opinion` tool. See [Second Opinion](#second-opinion) below - **forces this model to lose live token streaming on every turn**, not just the ones that use it. |
 
 ### Local Fast-Tier Routing
 
@@ -594,6 +595,27 @@ Routing decisions are logged (`[Proxy][Routing] Tool-continuation detected, rout
 
 > [!WARNING]
 > **Don't combine `localFastTier` with `allowOrchestrationTools` on the same model.** Sub-agent orchestration spawns multiple agents working in parallel, each independently hitting the same `localFastTier` target for their own tool-continuation turns. One local Ollama instance can't absorb that concurrency - confirmed in practice: several sub-agents piling onto one local model produced repeated timeouts/retries on the local endpoint and eventually `Upstream connection error: aborted`, which looked like general slowness/instability but was actually local-server contention. `localFastTier` was designed around a single agent's sequential tool loop, not multiple parallel agents. If you want both capabilities on one model, drop `localFastTier` for now - it needs a concurrency-aware redesign before it's safe to run alongside orchestration.
+
+### Second Opinion
+
+If you configure a model with `secondOpinionModel` pointing at another already-configured model, it gains access to a `get_second_opinion(question, context)` tool. When it calls that tool, the proxy - not Antigravity - fires an internal request to the second model, feeds the critique back as the tool's result, and lets the original model produce its real final answer incorporating it. Aimed at catching drift, mistakes, or fabricated-sounding claims by getting a genuinely independent model's perspective, without you having to manually switch models mid-task.
+
+```json
+{
+  "name": "models/claude-3-5-sonnet",
+  "displayName": "Claude 3.5 Sonnet",
+  "provider": "anthropic",
+  "apiKey": "YOUR_KEY",
+  "apiUrl": "https://api.anthropic.com/v1/messages",
+  "externalModelName": "claude-3-5-sonnet-latest",
+  "secondOpinionModel": "models/deepseek-v4-pro"
+}
+```
+
+Round-trips are logged (`[Proxy][SecondOpinion] ... asked ... for a second opinion.`) in the same log file referenced in Troubleshooting.
+
+> [!WARNING]
+> **A model with `secondOpinionModel` set loses live token-by-token streaming on every turn, not just the ones that call the tool.** The proxy can't know in advance whether a given turn will ask for a second opinion, so every turn on that model is fetched non-streaming from upstream first; you still get a normal response, just delivered all at once instead of incrementally. If the second model fails or times out, the primary model gets a graceful "second opinion unavailable" message and answers anyway rather than erroring out. Limited to one round trip per turn by design - if `get_second_opinion` is called alongside another tool in the same turn, the proxy skips interception entirely and passes the response through untouched.
 
 ## UI Features
 

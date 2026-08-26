@@ -28,6 +28,17 @@ export interface CustomModel {
     maxRetries?: number;
     /** name of another configured model to route pure tool-continuation turns to */
     localFastTier?: string;
+    /**
+     * Name of another configured model to consult for a critique before
+     * finalizing an answer, via a proxy-synthesized `get_second_opinion`
+     * tool. Off by default. Note: forces this model's requests to be
+     * fetched non-streaming from upstream (the tool call can only be known
+     * once the full response exists), so a model with this set loses live
+     * token-by-token streaming on every turn, not just the ones that end
+     * up calling the tool - the client still sees a normal response, just
+     * delivered all at once instead of incrementally.
+     */
+    secondOpinionModel?: string;
 }
 export declare function startProxy(): Promise<number>;
 export declare function stopProxy(): Promise<void>;

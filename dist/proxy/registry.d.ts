@@ -37,4 +37,11 @@ export declare function translateStreamChunk(provider: string, chunk: unknown, m
 export declare function getProviderHeaders(provider: string, apiKey: string): ProviderHeaders;
 export declare function supportsStreaming(provider: string): boolean;
 export declare function getProviderUrl(baseUrl: string, modelName: string, isStream: boolean, translator: TranslatorModule | null): string;
+/**
+ * Resolves the actual URL to call for a request, given the already-
+ * normalized provider (e.g. 'openai' for custom/openrouter). Shared by
+ * the main request path and any internal proxy-initiated request (e.g.
+ * a second-opinion round trip) so URL-building logic can't drift apart.
+ */
+export declare function resolveUpstreamUrl(baseUrl: string, provider: string, modelName: string, isStream: boolean): string;
 //# sourceMappingURL=registry.d.ts.map

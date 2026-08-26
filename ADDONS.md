@@ -39,6 +39,54 @@ exist in your config; adjust to match yours.
 Manual override: start a message with `/claude`, `/gemini`, `/gpt`, or
 `/deepseek` to force a specific target instead of auto-classifying.
 
+## Second Opinion (cross-model critique)
+
+The problem this solves: if you only run one AI tool, nothing catches it
+drifting, fabricating, or mis-scoping an answer - the failure mode this
+project itself has hit more than once (a skill that mis-scoped itself, a
+scaffolding step that got silently skipped) was only caught because a
+second system happened to be watching. Most people downloading this mod
+won't have a second AI tool cross-checking the same files the way this
+project's own Claude Code + Antigravity workflow does - this gives them
+an equivalent, built into the proxy itself.
+
+Add `secondOpinionModel` to a model's config, pointing at another already-
+configured model's `name`:
+
+```json
+{
+  "name": "models/claude-3-5-sonnet",
+  "provider": "anthropic",
+  "secondOpinionModel": "models/deepseek-v4-pro"
+}
+```
+
+That model gains a proxy-synthesized `get_second_opinion(question, context)`
+tool. When it's called, the proxy fires an internal request to the second
+model and feeds the critique back as the tool's result - Antigravity never
+sees the intermediate call, only the primary model's final answer after
+incorporating it.
+
+**Real cost, not a footnote**: a model with this set loses live token
+streaming on every turn, not just the ones that trigger the tool, since
+the proxy can't know in advance whether a turn will call it. See the
+[Second Opinion section in README.md](README.md#second-opinion) for the
+full trade-off, the one-round-trip-per-turn limit, and the graceful
+fallback if the second model fails.
+
+Like Smart Router and the skills above, this ships in the same codebase
+everyone gets, but does nothing unless you set the field - none of this
+project's own four machines need it, and none of them are affected by it
+existing in the code.
+
+**Test it**: configure it as above, prompt the primary model with
+something likely to trigger a self-check (e.g. "review this trading
+strategy backtest for overfitting"), and watch for
+`[Proxy][SecondOpinion] ... asked ... for a second opinion.` in the log
+referenced in the README's Troubleshooting section. Confirm a model
+*without* `secondOpinionModel` set behaves identically to before -
+regression check.
+
 ## Global Governance (GEMINI.md protection + anti-drift rules)
 
 The problem this solves: `~/.gemini/GEMINI.md` is Antigravity's own global

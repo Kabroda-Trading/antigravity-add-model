@@ -180,6 +180,32 @@ export function getProviderUrl(
   return baseUrl;
 }
 
+/**
+ * Resolves the actual URL to call for a request, given the already-
+ * normalized provider (e.g. 'openai' for custom/openrouter). Shared by
+ * the main request path and any internal proxy-initiated request (e.g.
+ * a second-opinion round trip) so URL-building logic can't drift apart.
+ */
+export function resolveUpstreamUrl(baseUrl: string, provider: string, modelName: string, isStream: boolean): string {
+  let finalUrlStr = baseUrl;
+  if (provider === 'google' || provider === 'ollama') {
+    const providerTranslator = getTranslator(provider);
+    finalUrlStr = getProviderUrl(finalUrlStr, modelName, isStream, providerTranslator);
+  } else if (provider === 'openai') {
+    const urlLower = finalUrlStr.toLowerCase();
+    if (!urlLower.includes('/chat/completions') && !urlLower.includes('/completions')) {
+      if (finalUrlStr.endsWith('/v1')) {
+        finalUrlStr += '/chat/completions';
+      } else if (!finalUrlStr.endsWith('/')) {
+        finalUrlStr += '/v1/chat/completions';
+      } else {
+        finalUrlStr += 'v1/chat/completions';
+      }
+    }
+  }
+  return finalUrlStr;
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────
 
 loadTranslators();

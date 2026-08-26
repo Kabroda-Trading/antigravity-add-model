@@ -52,6 +52,7 @@ const electron_1 = require("electron");
 const electron_log_1 = __importDefault(require("electron-log"));
 const routing_1 = require("./proxy/routing");
 const smartRouter_1 = require("./proxy/smartRouter");
+const secondOpinion_1 = require("./proxy/secondOpinion");
 // ─── Imports ──────────────────────────────────────────────────────────────
 let server = null;
 let proxyPort = 0;
@@ -351,7 +352,117 @@ function parseRetryAfter(headers) {
     }
     return 0;
 }
-function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount = 0) {
+/**
+ * Writes a completed (non-streaming, already-translated) response to the
+ * client, framed as either a single SSE event or plain JSON depending on
+ * what the client actually asked for. Used both for the normal
+ * non-streaming path and for a model with `secondOpinionModel` set, whose
+ * upstream call is always non-streaming but whose client-facing response
+ * still needs to match the client's original streaming preference.
+ */
+function writeFinalCloudCodeResponse(res, mapped, isStream) {
+    const cloudCodeResponse = { response: mapped, traceId: '', metadata: {} };
+    if (isStream) {
+        if (!res.headersSent) {
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+                'X-Accel-Buffering': 'no',
+            });
+        }
+        if (!res.writableEnded) {
+            res.write(`data: ${JSON.stringify(cloudCodeResponse)}\n\n`);
+            const finalChunk = {
+                response: { candidates: [{ content: { parts: [], role: 'model' }, finishReason: 'STOP', index: 0 }] },
+                traceId: '',
+                metadata: {},
+            };
+            res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+            res.end();
+        }
+        return;
+    }
+    if (!res.headersSent) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+    }
+    if (!res.writableEnded)
+        res.end(JSON.stringify(cloudCodeResponse));
+}
+/**
+ * Fires a single, non-streaming, non-retrying internal request to another
+ * configured model to get a text critique - used for a second-opinion
+ * round trip. Deliberately minimal (v1: fail fast, no retries) since a
+ * hung or failed second opinion should degrade gracefully rather than
+ * hang the primary model's whole turn.
+ */
+function fireSecondOpinionRequest(targetModel, question, context) {
+    return new Promise((resolve, reject) => {
+        const provider = targetModel.provider === 'custom' || targetModel.provider === 'openrouter' ? 'openai' : targetModel.provider;
+        const body = {
+            systemInstruction: {
+                parts: [{ text: 'Give a concise, critical critique of the following. Focus on what might be missed, wrong, or unsupported. Do not restate the question back.' }],
+            },
+            contents: [
+                {
+                    role: 'user',
+                    parts: [{ text: context ? `${question}\n\nContext:\n${context}` : question }],
+                },
+            ],
+        };
+        const payload = registry.translateRequest(provider, body, targetModel.externalModelName, false);
+        const headers = registry.getProviderHeaders(provider, targetModel.apiKey);
+        const finalUrlStr = registry.resolveUpstreamUrl(targetModel.apiUrl, provider, targetModel.externalModelName, false);
+        let url;
+        try {
+            url = new URL(finalUrlStr);
+        }
+        catch (e) {
+            reject(e);
+            return;
+        }
+        const client = url.protocol === 'https:' ? https : http;
+        const options = { method: 'POST', headers: headers };
+        if (targetModel.allowUnauthorized) {
+            options.rejectUnauthorized = false;
+        }
+        const timeoutMs = Math.min(targetModel.timeout || 60000, 60000);
+        const request = client.request(url, options, (apiRes) => {
+            let responseBody = '';
+            apiRes.on('data', (chunk) => (responseBody += chunk));
+            apiRes.on('end', () => {
+                if (apiRes.statusCode >= 400) {
+                    reject(new Error(`Second-opinion model returned HTTP ${apiRes.statusCode}`));
+                    return;
+                }
+                try {
+                    const parsed = JSON.parse(responseBody);
+                    const providerForResponse = targetModel.provider === 'custom' || targetModel.provider === 'openrouter' ? 'openai' : targetModel.provider;
+                    const mapped = registry.translateResponse(providerForResponse, parsed, targetModel.name);
+                    const parts = mapped?.candidates?.[0]?.content?.parts || [];
+                    const text = parts.map((p) => p.text || '').join('').trim();
+                    if (!text) {
+                        reject(new Error('Second-opinion model returned an empty response'));
+                        return;
+                    }
+                    resolve(text);
+                }
+                catch (e) {
+                    reject(e);
+                }
+            });
+            apiRes.on('error', reject);
+        });
+        request.setTimeout(timeoutMs, () => {
+            request.destroy();
+            reject(new Error(`Second-opinion model timed out after ${timeoutMs}ms`));
+        });
+        request.on('error', reject);
+        request.write(JSON.stringify(payload));
+        request.end();
+    });
+}
+function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount = 0, isSecondOpinionFollowUp = false) {
     if (res.writableEnded || res.headersSent) {
         electron_log_1.default.warn(`[Proxy] Response already finalized for ${model.name}. Aborting zombie request.`);
         return;
@@ -359,30 +470,21 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
     const MAX_RETRIES = Math.min(Math.max(model.maxRetries ?? 3, 0), 5);
     const REQUEST_TIMEOUT_MS = model.timeout || 120000;
     const provider = model.provider === 'custom' || model.provider === 'openrouter' ? 'openai' : model.provider;
-    const payload = registry.translateRequest(provider, geminiBody, model.externalModelName, model.allowOrchestrationTools);
+    // A second opinion can only be detected once the full response exists,
+    // so this model's requests are fetched non-streaming from upstream
+    // whenever it's configured - `isStream` still controls how the *client*
+    // response is framed (see writeFinalResponse).
+    const secondOpinionTarget = !isSecondOpinionFollowUp && model.secondOpinionModel
+        ? (0, secondOpinion_1.resolveSecondOpinionModel)(model, loadCustomModels())
+        : null;
+    const upstreamIsStream = secondOpinionTarget ? false : isStream;
+    const bodyForTranslation = secondOpinionTarget ? (0, secondOpinion_1.injectSecondOpinionTool)(geminiBody) : geminiBody;
+    const payload = registry.translateRequest(provider, bodyForTranslation, model.externalModelName, model.allowOrchestrationTools);
     const headers = registry.getProviderHeaders(provider, model.apiKey);
-    if (isStream && registry.supportsStreaming(provider)) {
+    if (upstreamIsStream && registry.supportsStreaming(provider)) {
         payload.stream = true;
     }
-    let finalUrlStr = model.apiUrl;
-    if (provider === 'google' || provider === 'ollama') {
-        const providerTranslator = registry.getTranslator(provider);
-        finalUrlStr = registry.getProviderUrl(finalUrlStr, model.externalModelName, isStream, providerTranslator);
-    }
-    else if (provider === 'openai' || model.provider === 'custom' || model.provider === 'openrouter') {
-        const urlLower = finalUrlStr.toLowerCase();
-        if (!urlLower.includes('/chat/completions') && !urlLower.includes('/completions')) {
-            if (finalUrlStr.endsWith('/v1')) {
-                finalUrlStr += '/chat/completions';
-            }
-            else if (!finalUrlStr.endsWith('/')) {
-                finalUrlStr += '/v1/chat/completions';
-            }
-            else {
-                finalUrlStr += 'v1/chat/completions';
-            }
-        }
-    }
+    const finalUrlStr = registry.resolveUpstreamUrl(model.apiUrl, provider, model.externalModelName, upstreamIsStream);
     const url = new URL(finalUrlStr);
     const client = url.protocol === 'https:' ? https : http;
     const options = {
@@ -404,7 +506,7 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                 res.end(JSON.stringify({ error: { message: 'Upstream connection error: ' + err.message } }));
             }
         });
-        if (isStream) {
+        if (upstreamIsStream) {
             if (apiRes.statusCode >= 400) {
                 let errorBody = '';
                 apiRes.on('data', (chunk) => errorBody += chunk.toString());
@@ -552,16 +654,25 @@ function handleCustomModelRequest(res, model, geminiBody, isStream, retryCount =
                     }
                     const providerForResponse = model.provider === 'custom' || model.provider === 'openrouter' ? 'openai' : model.provider;
                     const mapped = registry.translateResponse(providerForResponse, parsed, model.name);
-                    const cloudCodeResponse = {
-                        response: mapped,
-                        traceId: '',
-                        metadata: {},
-                    };
-                    if (!res.headersSent) {
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                    if (secondOpinionTarget) {
+                        const secondOpinionCall = (0, secondOpinion_1.extractSecondOpinionCall)(mapped);
+                        if (secondOpinionCall) {
+                            electron_log_1.default.info(`[Proxy][SecondOpinion] ${model.displayName} asked ${secondOpinionTarget.displayName} for a second opinion.`);
+                            fireSecondOpinionRequest(secondOpinionTarget, secondOpinionCall.question, secondOpinionCall.context)
+                                .then((critique) => {
+                                const followUpContents = (0, secondOpinion_1.buildFollowUpContents)(geminiBody.contents, secondOpinionCall.part, critique);
+                                handleCustomModelRequest(res, model, { ...geminiBody, contents: followUpContents }, isStream, 0, true);
+                            })
+                                .catch((err) => {
+                                electron_log_1.default.warn(`[Proxy][SecondOpinion] ${secondOpinionTarget.displayName} failed: ${err.message}`);
+                                const critique = `Second opinion unavailable: ${err.message}. Proceed using your own judgment.`;
+                                const followUpContents = (0, secondOpinion_1.buildFollowUpContents)(geminiBody.contents, secondOpinionCall.part, critique);
+                                handleCustomModelRequest(res, model, { ...geminiBody, contents: followUpContents }, isStream, 0, true);
+                            });
+                            return;
+                        }
                     }
-                    if (!res.writableEnded)
-                        res.end(JSON.stringify(cloudCodeResponse));
+                    writeFinalCloudCodeResponse(res, mapped, isStream);
                 }
                 catch (e) {
                     electron_log_1.default.error('[Proxy] Failed to map response:', e);
