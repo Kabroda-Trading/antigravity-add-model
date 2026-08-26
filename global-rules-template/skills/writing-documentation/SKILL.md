@@ -10,6 +10,18 @@ description: >-
 
 # Writing & Documentation Skill
 
+## Use this skill when
+- Writing or editing a how-to page, README, user guide, or release notes
+- Reviewing existing documentation for clarity/tone
+- Drafting any explanatory content meant to be read as a finished document
+
+## Do not use this skill when
+- The request is for internal notes, a quick chat answer, or a code comment
+- The task is API-specification authoring (OpenAPI/AsyncAPI schemas, SDK
+  generation) — that's a distinct domain-expertise skill, not a prose-style
+  one; don't force this skill's style rules onto structured spec formats
+- The user explicitly wants casual/informal tone (e.g. a Slack-style update)
+
 This skill applies two real, publicly documented technical-writing standards
 directly, rather than generic "sound professional" advice:
 

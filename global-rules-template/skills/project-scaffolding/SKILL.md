@@ -10,6 +10,17 @@ description: >-
 
 # Project Scaffolding Skill
 
+## Use this skill when
+- The current project folder is new or effectively empty and unstructured
+- The user says something like "let's start a new project," "help me set
+  this up," or "frame this out" in that context
+
+## Do not use this skill when
+- Working in a project that already has `AGENTS.md`/`AGENT_LOG.md` set up
+  — that's routine build work, not a new-project setup
+- The user asks for a single small file or fix inside an existing project,
+  even if the phrasing sounds similar ("help me set up a config for X")
+
 Runs a short whiteboard/framing conversation, then scaffolds the project
 skeleton into the **currently open project folder** (never anywhere else -
 this skill always operates on the active workspace root, not a path the
