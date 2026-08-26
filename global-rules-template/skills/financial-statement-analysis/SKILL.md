@@ -1,5 +1,5 @@
 ---
-name: financial-analysis
+name: financial-statement-analysis
 description: >-
   Use when the user provides or pastes a financial statement (P&L/income
   statement, balance sheet) and asks for analysis, wants results compared

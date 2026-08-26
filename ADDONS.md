@@ -125,8 +125,38 @@ skill exists partly to prevent (see the warning below). It bundles its own
 copy of the cross-agent scaffolding script, so it works standalone on a
 machine that doesn't have `new-agent-project.ps1` installed separately.
 
-More task-specific skills (e.g. a research skill, a financial-analysis
-skill for P&L/KPI work) can follow the same pattern - one folder per skill
+**Two kinds of skill, worth distinguishing when deciding what to add:**
+*process skills* apply to almost any project regardless of domain
+(`project-scaffolding` covers requirements+planning; `system-architecture`
+and `code-review` below cover two more phases of the same generic
+build lifecycle). *Domain skills* are specific to what a project is
+*about* (`financial-statement-analysis`) - global scope is still correct
+for these as long as the domain itself is something you work in across
+multiple projects, not tied to one project's own identity (that
+distinction is what the warning below is actually about).
+
+**`system-architecture`** - sourced from the C4 model (Simon Brown,
+c4model.com): once requirements are agreed but before code exists, settle
+the system's boundary (context) and its major running pieces plus how
+they communicate (container) - most projects don't need to go deeper than
+that. Explicitly warns against over-architecting a simple project just as
+much as under-architecting a complex one.
+
+**`code-review`** - sourced from Google's Engineering Practices Code
+Review Developer Guide (google.github.io/eng-practices/review): checks
+design and functionality before complexity, tests, naming, or style -
+prevents a review from being all naming nitpicks with no comment on
+whether the approach itself is right.
+
+**`financial-statement-analysis`** (renamed from `financial-analysis` -
+same content, name now matches scope) - CFA Institute-sourced P&L/ratio
+analysis. Explicitly refuses to compute liquidity/leverage ratios from a
+P&L alone (they require the balance sheet) rather than fabricating them -
+found to be the likely cause of "analysis goes off in left field" when
+only a P&L is provided.
+
+More task-specific skills (e.g. `budgeting-forecasting`,
+`marketing-analysis`) can follow the same pattern - one folder per skill
 under `global-rules-template/skills/`, each with its own `SKILL.md`, each
 copied into `~/.gemini/config/skills/` to activate.
 
