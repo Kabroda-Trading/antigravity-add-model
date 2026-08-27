@@ -140,6 +140,32 @@ describe('normalizeToolArgs', () => {
     const result = normalizeToolArgs('view_file', ['/single.js'] as unknown as Record<string, unknown>);
     expect(result).toEqual({ AbsolutePath: '/single.js' });
   });
+
+  it('regression: unknown tool with prose containing a period should not trigger the path fallback', () => {
+    // Confirmed happening in practice: any free-form text argument (a
+    // description, a prompt) almost always contains a period, which used
+    // to make the universal fallback misfire and inject a bogus
+    // AbsolutePath key into completely unrelated tool calls.
+    const result = normalizeToolArgs('some_unrecognized_tool', { description: 'A short summary of the task.' });
+    expect(result).toEqual({ description: 'A short summary of the task.' });
+    expect(result.AbsolutePath).toBeUndefined();
+  });
+
+  it('orchestration tools are never sent through the universal path fallback', () => {
+    // The actual bug: define_subagent's description/system_prompt fields
+    // are prose and virtually always contain a period, which triggered
+    // the fallback and injected AbsolutePath into a tool that never had
+    // that field, causing Antigravity's schema validator to reject the
+    // whole call with "additional properties 'AbsolutePath' not allowed".
+    const args = {
+      name: 'trading-system-architect',
+      description: 'Designs the coded decision layer for trend, structure, volatility, and momentum.',
+      system_prompt: 'Ground every claim in the verified library at C:\\Users\\Shadow\\Workspace\\Trading Knowledge.',
+    };
+    const result = normalizeToolArgs('define_subagent', args);
+    expect(result).toEqual(args);
+    expect(result.AbsolutePath).toBeUndefined();
+  });
 });
 
 // ─── translateToolCallToNative ──────────────────────────────────────────────

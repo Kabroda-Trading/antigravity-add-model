@@ -40,6 +40,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.ORCHESTRATION_ONLY_TOOLS = void 0;
 exports.normalizeToolName = normalizeToolName;
 exports.normalizeToolArgs = normalizeToolArgs;
 exports.fixParamTypes = fixParamTypes;
@@ -47,6 +48,20 @@ exports.translateToolCallToNative = translateToolCallToNative;
 exports.formatTranslatedResponse = formatTranslatedResponse;
 const path = __importStar(require("path"));
 const electron_log_1 = __importDefault(require("electron-log"));
+/**
+ * Multi-agent orchestration tools (Antigravity-native, not file/path tools).
+ * Canonical location - openai.ts's tool-declaration filter imports this
+ * rather than keeping its own copy, so the list can't drift out of sync
+ * with the exclusion in `applyUniversalPathFallback` below.
+ */
+exports.ORCHESTRATION_ONLY_TOOLS = new Set([
+    'send_message',
+    'define_subagent',
+    'invoke_subagent',
+    'manage_subagents',
+    'manage_task',
+    'schedule',
+]);
 // ─── Tool Parameter Normalization ──────────────────────────────────────────
 const TOOL_PARAM_NORMALIZATION = {
     view_file: {
@@ -344,6 +359,18 @@ function normalizeToolArgs(name, args) {
     }
     const config = TOOL_PARAM_NORMALIZATION[name];
     if (!config) {
+        // Orchestration tools never take path-like arguments - skip the
+        // fallback entirely rather than let it misfire. Confirmed happening
+        // in practice: `define_subagent`'s `description`/`system_prompt`
+        // fields are free-form prose, which virtually always contains a
+        // period, so the fallback's "any string with a '/' '\\' or '.'"
+        // heuristic (below) was injecting a bogus `AbsolutePath` field into
+        // every real call, which Antigravity's strict per-tool schema then
+        // rejected outright with "additional properties 'AbsolutePath' not
+        // allowed" - the model never sent that field, the proxy added it.
+        if (exports.ORCHESTRATION_ONLY_TOOLS.has(name)) {
+            return args;
+        }
         return applyUniversalPathFallback(args);
     }
     const normalized = {};
@@ -436,8 +463,14 @@ function applyUniversalPathFallback(args) {
             return result;
         }
     }
+    // Require an actual path separator, not just a period - a bare '.' is a
+    // terrible signal for "this is a file path" (ordinary sentences end in
+    // one constantly). Confirmed causing real damage: a free-form prose
+    // argument like a tool description ("...decision layer.") used to match
+    // this check and get a bogus AbsolutePath field injected into a
+    // completely unrelated tool call.
     for (const [, value] of Object.entries(args)) {
-        if (typeof value === 'string' && (value.includes('/') || value.includes('\\') || value.includes('.'))) {
+        if (typeof value === 'string' && (value.includes('/') || value.includes('\\'))) {
             result['AbsolutePath'] = value;
             return result;
         }

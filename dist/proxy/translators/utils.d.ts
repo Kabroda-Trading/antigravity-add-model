@@ -28,6 +28,13 @@ export interface MatchResult {
     LineNumber: number;
     LineContent: string;
 }
+/**
+ * Multi-agent orchestration tools (Antigravity-native, not file/path tools).
+ * Canonical location - openai.ts's tool-declaration filter imports this
+ * rather than keeping its own copy, so the list can't drift out of sync
+ * with the exclusion in `applyUniversalPathFallback` below.
+ */
+export declare const ORCHESTRATION_ONLY_TOOLS: Set<string>;
 export interface DirectoryItem {
     name: string;
     isDir: boolean;

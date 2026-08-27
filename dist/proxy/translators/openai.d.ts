@@ -129,6 +129,19 @@ interface GeminiUsageMetadata {
     candidatesTokenCount: number;
     totalTokenCount: number;
 }
+/**
+ * Multi-agent orchestration tools (send_message, define_subagent, etc.) are
+ * meant for agent-to-agent handoff within Antigravity's own Gemini-driven
+ * cascade system, not for talking to the end user. Smaller local models
+ * (observed: Qwen 2.5 Coder, Hermes 3 via Ollama) reliably misuse
+ * send_message as if it were "reply to the user," get rejected by
+ * Antigravity's real backend ("recipient 'user' not found"), and then loop
+ * on the same broken call indefinitely instead of just answering in plain
+ * text. Withholding these tools from local models avoids that failure mode
+ * entirely - local models don't have the training data to use Antigravity's
+ * specific multi-agent orchestration correctly anyway, and a plain text
+ * response already covers "tell the user something."
+ */
 declare function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[], allowOrchestrationTools?: boolean): OpenAITool[];
 export declare function mapGeminiToOpenAI(geminiBody: GeminiRequestBody, modelName: string, provider?: string, allowOrchestrationTools?: boolean): OpenAIRequestBody;
 export declare function mapOpenAIToGemini(openAiRes: OpenAIResponse, modelName: string): GeminiGenerateContentResponse;

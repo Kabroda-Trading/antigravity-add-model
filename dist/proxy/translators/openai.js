@@ -62,14 +62,6 @@ const shared_1 = require("../shared");
  * specific multi-agent orchestration correctly anyway, and a plain text
  * response already covers "tell the user something."
  */
-const ORCHESTRATION_ONLY_TOOLS = new Set([
-    'send_message',
-    'define_subagent',
-    'invoke_subagent',
-    'manage_subagents',
-    'manage_task',
-    'schedule',
-]);
 function mapGeminiToolsToOpenAI(geminiTools, allowOrchestrationTools = false) {
     if (!geminiTools || !Array.isArray(geminiTools))
         return [];
@@ -77,7 +69,7 @@ function mapGeminiToolsToOpenAI(geminiTools, allowOrchestrationTools = false) {
     for (const toolGroup of geminiTools) {
         if (toolGroup.functionDeclarations && Array.isArray(toolGroup.functionDeclarations)) {
             for (const func of toolGroup.functionDeclarations) {
-                if (!allowOrchestrationTools && ORCHESTRATION_ONLY_TOOLS.has(func.name))
+                if (!allowOrchestrationTools && utils_1.ORCHESTRATION_ONLY_TOOLS.has(func.name))
                     continue;
                 const params = func.parameters
                     ? JSON.parse(JSON.stringify(func.parameters))

@@ -11,6 +11,7 @@ import {
   formatTranslatedResponse,
   normalizeToolArgs,
   normalizeToolName,
+  ORCHESTRATION_ONLY_TOOLS,
   ToolCallArgs,
   TranslatedCallInfo,
 } from './utils';
@@ -187,15 +188,6 @@ interface DSMLParsedResult {
  * specific multi-agent orchestration correctly anyway, and a plain text
  * response already covers "tell the user something."
  */
-const ORCHESTRATION_ONLY_TOOLS = new Set([
-  'send_message',
-  'define_subagent',
-  'invoke_subagent',
-  'manage_subagents',
-  'manage_task',
-  'schedule',
-]);
-
 function mapGeminiToolsToOpenAI(geminiTools: GeminiTool[], allowOrchestrationTools = false): OpenAITool[] {
   if (!geminiTools || !Array.isArray(geminiTools)) return [];
   const openaiTools: OpenAITool[] = [];
