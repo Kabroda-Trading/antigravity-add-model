@@ -35,6 +35,29 @@ export interface MatchResult {
  * with the exclusion in `applyUniversalPathFallback` below.
  */
 export declare const ORCHESTRATION_ONLY_TOOLS: Set<string>;
+/**
+ * Every tool name Antigravity itself has been directly observed declaring
+ * (confirmed via a live `[Proxy][DIAG] tools present` log capturing the
+ * full functionDeclarations list - not guessed). Tools with a genuine need
+ * for path-argument normalization already have their own entry in
+ * TOOL_PARAM_NORMALIZATION below and are handled there; every other name
+ * in this set is a real, known-schema Antigravity tool that should NEVER
+ * be run through applyUniversalPathFallback's guessing heuristic - that
+ * heuristic exists for genuinely unknown/hallucinated tool names, not for
+ * tools we already know the real schema of.
+ *
+ * Found the hard way, twice, before this was made comprehensive: the
+ * fallback silently injected a bogus `AbsolutePath` field into both
+ * `define_subagent` and `generate_image` calls (neither takes a path
+ * argument at all), which Antigravity's strict per-tool schema then
+ * rejected outright for an argument the model never actually sent -
+ * `send_message`, `manage_task`, `schedule`, `invoke_subagent`,
+ * `manage_subagents`, `ask_question`, `call_mcp_tool`, `list_resources`,
+ * `read_resource`, `read_url_content`, `search_web`, and `find_by_name`
+ * are exposed to the identical failure mode and are covered here
+ * preemptively rather than waiting to hit each one individually.
+ */
+export declare const KNOWN_NATIVE_TOOLS_NO_PATH_ARGS: Set<string>;
 export interface DirectoryItem {
     name: string;
     isDir: boolean;

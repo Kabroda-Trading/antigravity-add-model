@@ -40,7 +40,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ORCHESTRATION_ONLY_TOOLS = void 0;
+exports.KNOWN_NATIVE_TOOLS_NO_PATH_ARGS = exports.ORCHESTRATION_ONLY_TOOLS = void 0;
 exports.normalizeToolName = normalizeToolName;
 exports.normalizeToolArgs = normalizeToolArgs;
 exports.fixParamTypes = fixParamTypes;
@@ -61,6 +61,39 @@ exports.ORCHESTRATION_ONLY_TOOLS = new Set([
     'manage_subagents',
     'manage_task',
     'schedule',
+]);
+/**
+ * Every tool name Antigravity itself has been directly observed declaring
+ * (confirmed via a live `[Proxy][DIAG] tools present` log capturing the
+ * full functionDeclarations list - not guessed). Tools with a genuine need
+ * for path-argument normalization already have their own entry in
+ * TOOL_PARAM_NORMALIZATION below and are handled there; every other name
+ * in this set is a real, known-schema Antigravity tool that should NEVER
+ * be run through applyUniversalPathFallback's guessing heuristic - that
+ * heuristic exists for genuinely unknown/hallucinated tool names, not for
+ * tools we already know the real schema of.
+ *
+ * Found the hard way, twice, before this was made comprehensive: the
+ * fallback silently injected a bogus `AbsolutePath` field into both
+ * `define_subagent` and `generate_image` calls (neither takes a path
+ * argument at all), which Antigravity's strict per-tool schema then
+ * rejected outright for an argument the model never actually sent -
+ * `send_message`, `manage_task`, `schedule`, `invoke_subagent`,
+ * `manage_subagents`, `ask_question`, `call_mcp_tool`, `list_resources`,
+ * `read_resource`, `read_url_content`, `search_web`, and `find_by_name`
+ * are exposed to the identical failure mode and are covered here
+ * preemptively rather than waiting to hit each one individually.
+ */
+exports.KNOWN_NATIVE_TOOLS_NO_PATH_ARGS = new Set([
+    ...exports.ORCHESTRATION_ONLY_TOOLS,
+    'generate_image',
+    'read_url_content',
+    'search_web',
+    'find_by_name',
+    'ask_question',
+    'call_mcp_tool',
+    'list_resources',
+    'read_resource',
 ]);
 // ─── Tool Parameter Normalization ──────────────────────────────────────────
 const TOOL_PARAM_NORMALIZATION = {
@@ -359,16 +392,19 @@ function normalizeToolArgs(name, args) {
     }
     const config = TOOL_PARAM_NORMALIZATION[name];
     if (!config) {
-        // Orchestration tools never take path-like arguments - skip the
-        // fallback entirely rather than let it misfire. Confirmed happening
-        // in practice: `define_subagent`'s `description`/`system_prompt`
-        // fields are free-form prose, which virtually always contains a
-        // period, so the fallback's "any string with a '/' '\\' or '.'"
-        // heuristic (below) was injecting a bogus `AbsolutePath` field into
-        // every real call, which Antigravity's strict per-tool schema then
-        // rejected outright with "additional properties 'AbsolutePath' not
-        // allowed" - the model never sent that field, the proxy added it.
-        if (exports.ORCHESTRATION_ONLY_TOOLS.has(name)) {
+        // Any known Antigravity-native tool without its own path-normalization
+        // entry never takes path-like arguments - skip the fallback entirely
+        // rather than let it misfire. Confirmed happening in practice, twice
+        // independently (define_subagent, then generate_image): a free-form
+        // text field (a description, a prompt) containing a '/' or '\\'
+        // triggered the fallback's guessing heuristic and injected a bogus
+        // `AbsolutePath` field into a call that never had one, which
+        // Antigravity's strict per-tool schema then rejected outright for an
+        // argument the model never actually sent. See
+        // KNOWN_NATIVE_TOOLS_NO_PATH_ARGS's doc comment for the full list this
+        // protects preemptively. Only a genuinely unknown/hallucinated tool
+        // name falls through to the guessing fallback below.
+        if (exports.KNOWN_NATIVE_TOOLS_NO_PATH_ARGS.has(name)) {
             return args;
         }
         return applyUniversalPathFallback(args);

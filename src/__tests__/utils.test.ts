@@ -166,6 +166,34 @@ describe('normalizeToolArgs', () => {
     expect(result).toEqual(args);
     expect(result.AbsolutePath).toBeUndefined();
   });
+
+  it('regression: generate_image is never sent through the universal path fallback', () => {
+    // The second real occurrence of the same bug class, on a different
+    // tool: generate_image's ImagePaths argument legitimately contains a
+    // real path (for reference-image edits), which used to trigger the
+    // fallback and get renamed/duplicated into AbsolutePath - a field
+    // generate_image's schema doesn't accept, causing the identical
+    // "additional properties 'AbsolutePath' not allowed" rejection.
+    const args = {
+      Prompt: 'A financial dashboard mockup, dark theme, line charts',
+      ImageName: 'dashboard_mockup.png',
+      ImagePaths: ['C:\\Users\\Shadow\\Desktop\\reference.png'],
+    };
+    const result = normalizeToolArgs('generate_image', args);
+    expect(result).toEqual(args);
+    expect(result.AbsolutePath).toBeUndefined();
+  });
+
+  it('every known-native tool without its own path-normalization entry passes args through unchanged', () => {
+    const args = { note: 'contains a slash / and a backslash \\ and a period.' };
+    for (const name of [
+      'send_message', 'manage_task', 'schedule', 'invoke_subagent', 'manage_subagents',
+      'generate_image', 'read_url_content', 'search_web', 'find_by_name',
+      'ask_question', 'call_mcp_tool', 'list_resources', 'read_resource',
+    ]) {
+      expect(normalizeToolArgs(name, args)).toEqual(args);
+    }
+  });
 });
 
 // ─── translateToolCallToNative ──────────────────────────────────────────────
