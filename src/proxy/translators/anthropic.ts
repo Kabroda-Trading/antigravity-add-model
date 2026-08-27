@@ -298,7 +298,9 @@ export function mapAnthropicToGemini(anthRes: AnthropicResponse, modelName: stri
       modelToolCallIds.set(modelName, modelTCIds);
       touchStateTimestamp(stateTimestamps.toolCallIds, modelName);
 
+      log.info(`[Proxy][DIAG] raw tool_call (anthropic): name=${block.name}, arguments=${JSON.stringify(block.input)}`);
       const normalizedInput = normalizeToolArgs(block.name || '', block.input || {});
+      log.info(`[Proxy][DIAG] normalized tool_call (anthropic): name=${block.name}, arguments=${JSON.stringify(normalizedInput)}`);
       const translated = translateToolCallToNative(block.name || '', normalizedInput);
       if (translated.name !== block.name) {
         translated.args = normalizeToolArgs(translated.name, translated.args) as Record<string, unknown>;
@@ -401,7 +403,9 @@ export function mapAnthropicChunkToGemini(chunk: AnthropicResponse, modelName: s
           log.debug('[Anthropic] Stream tool args parse fallback:', (e as Error).message);
           args = {};
         }
+        log.info(`[Proxy][DIAG] raw stream tool_call (anthropic): name=${tc.name}, arguments=${JSON.stringify(args)}`);
         args = normalizeToolArgs(tc.name, args) as ToolCallArgs;
+        log.info(`[Proxy][DIAG] normalized stream tool_call (anthropic): name=${tc.name}, arguments=${JSON.stringify(args)}`);
         const modelTCIds = modelToolCallIds.get(modelName) || {};
         modelTCIds[tc.name] = tc.id;
         modelToolCallIds.set(modelName, modelTCIds);

@@ -217,7 +217,9 @@ function mapAnthropicToGemini(anthRes, modelName) {
             modelTCIds[block.name || ''] = block.id || '';
             shared_1.modelToolCallIds.set(modelName, modelTCIds);
             (0, shared_1.touchStateTimestamp)(shared_1.stateTimestamps.toolCallIds, modelName);
+            electron_log_1.default.info(`[Proxy][DIAG] raw tool_call (anthropic): name=${block.name}, arguments=${JSON.stringify(block.input)}`);
             const normalizedInput = (0, utils_1.normalizeToolArgs)(block.name || '', block.input || {});
+            electron_log_1.default.info(`[Proxy][DIAG] normalized tool_call (anthropic): name=${block.name}, arguments=${JSON.stringify(normalizedInput)}`);
             const translated = (0, utils_1.translateToolCallToNative)(block.name || '', normalizedInput);
             if (translated.name !== block.name) {
                 translated.args = (0, utils_1.normalizeToolArgs)(translated.name, translated.args);
@@ -312,7 +314,9 @@ function mapAnthropicChunkToGemini(chunk, modelName) {
                     electron_log_1.default.debug('[Anthropic] Stream tool args parse fallback:', e.message);
                     args = {};
                 }
+                electron_log_1.default.info(`[Proxy][DIAG] raw stream tool_call (anthropic): name=${tc.name}, arguments=${JSON.stringify(args)}`);
                 args = (0, utils_1.normalizeToolArgs)(tc.name, args);
+                electron_log_1.default.info(`[Proxy][DIAG] normalized stream tool_call (anthropic): name=${tc.name}, arguments=${JSON.stringify(args)}`);
                 const modelTCIds = shared_1.modelToolCallIds.get(modelName) || {};
                 modelTCIds[tc.name] = tc.id;
                 shared_1.modelToolCallIds.set(modelName, modelTCIds);

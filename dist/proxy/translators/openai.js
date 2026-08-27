@@ -547,6 +547,7 @@ function mapOpenAIChunkToGemini(chunk, modelName) {
                 catch (_e) {
                     args = {};
                 }
+                electron_log_1.default.info(`[Proxy][DIAG] raw stream tool_call (pending/stop): name=${tc.name}, arguments=${JSON.stringify(args)}`);
                 const pendingToolName = (0, utils_1.normalizeToolName)(tc.name);
                 args = (0, utils_1.normalizeToolArgs)(pendingToolName, args);
                 const modelTCIds = shared_1.modelToolCallIds.get(modelName) || {};
@@ -598,8 +599,10 @@ function mapOpenAIChunkToGemini(chunk, modelName) {
                 electron_log_1.default.debug('[OpenAI] Stream tool args parse fallback:', e.message);
                 args = {};
             }
+            electron_log_1.default.info(`[Proxy][DIAG] raw stream tool_call: name=${tc.name}, arguments=${JSON.stringify(args)}`);
             const streamToolName = (0, utils_1.normalizeToolName)(tc.name);
             args = (0, utils_1.normalizeToolArgs)(streamToolName, args);
+            electron_log_1.default.info(`[Proxy][DIAG] normalized stream tool_call: name=${streamToolName}, arguments=${JSON.stringify(args)}`);
             const modelTCIds = shared_1.modelToolCallIds.get(modelName) || {};
             modelTCIds[streamToolName] = tc.id;
             shared_1.modelToolCallIds.set(modelName, modelTCIds);
