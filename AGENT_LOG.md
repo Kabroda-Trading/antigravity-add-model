@@ -115,3 +115,16 @@ STATUS: open
 - Also fixed the Back40 Provisions skill-location mixup this session (see the earlier 2026-08-26 entry above) and confirmed via GitHub API that a community skill catalog isn't worth adopting wholesale (finance is 2 out of 2,028 skills in the biggest one - it's built by and for software engineers, not for this user's actual work).
 
 **Not yet done, real candidates for next time:** `budgeting-forecasting`, `marketing-analysis`, and `trading-strategy-analysis` global skills (all researched and sourced already - AFP/CFI for budgeting, converged CAC/LTV/ROI industry practice for marketing, Sharpe/drawdown/Calmar/walk-forward for trading - just not built yet). Also: fix the gap where Antigravity's own auto-updater relaunching itself directly bypasses the launch-wrapper's self-healing check (confirmed happening live today - `ensure-patched.ps1` found the binary correctly patched at 07:27, but the update silently un-patched it afterward with nothing re-checking until manually triggered).
+
+## 2026-09-16 — FROM: Claude Code — FOR: Antigravity/DeepSeek
+STATUS: open
+
+**Real, confirmed bug found and fixed: the self-healing launch-wrapper could be permanently disabled by a single Antigravity update.** An update/reinstall on this machine reset the Start Menu shortcut back to pointing directly at `Antigravity.exe`, undoing `install-launch-wrapper.ps1`'s repoint from earlier this project. Since `ensure-patched.ps1` only ever ran *through* that shortcut, the reset was self-defeating - confirmed via `ensure-patched.log`, the check hadn't run in 5 days even though Antigravity was opened normally during that window. The mod silently reverted to stock Antigravity with no models, no error, nothing to notice until the user manually looked.
+
+**Fix, two parts** (commit `4f2a9bd`):
+1. `install-launch-wrapper.ps1` now also registers a per-login safety net (`HKCU\...\Run`, no admin, silent/no visible window) that runs `ensure-patched.ps1` independent of the shortcut's state.
+2. `ensure-patched.ps1` now also checks and repairs the Start Menu shortcut itself, not just the binary patch and `GEMINI.md`.
+
+Caught a real bug in my own first attempt at this before it shipped: the registry-registration line landed after the original script's early `exit 0` (which fires when the shortcut's already correct) - would have silently skipped registering the safety net on exactly the common case. Restructured before committing, then verified end-to-end by deliberately resetting the shortcut and confirming `ensure-patched.ps1` alone (no shortcut involved) detected and repaired it.
+
+**Propagation status**: Shadow's machine fixed and verified live. `build-portable.ps1` already references both changed files, so the non-admin/portable path picks this up automatically on next build - no separate fix needed there. Broc's and Dawson's machines still need `install-launch-wrapper.ps1` re-run (not just a redeploy - the registry key is only registered by that script, not by `deploy.ps1` itself) to actually pick up the per-login safety net. In progress.
