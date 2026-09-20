@@ -16,6 +16,23 @@ if (Test-Path $LsBinary) {
 $log = Join-Path $PSScriptRoot "ensure-patched.log"
 
 if ($needsPatch) {
+    $StagedAsar = "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar.staged"
+    $StagedLs = "$env:LOCALAPPDATA\Programs\antigravity\resources\bin\language_server.exe.staged"
+    $AsarPath = "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar"
+
+    if ((Test-Path $StagedAsar) -and (Test-Path $StagedLs)) {
+        try {
+            Move-Item $StagedAsar $AsarPath -Force -ErrorAction Stop
+            Move-Item $StagedLs $LsBinary -Force -ErrorAction Stop
+            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Applied pre-staged patch files instantly." | Out-File $log -Append
+            $needsPatch = $false
+        } catch {
+            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Staged swap failed ($($_.Exception.Message)), falling back to deploy script..." | Out-File $log -Append
+        }
+    }
+}
+
+if ($needsPatch) {
     # Admin install ships deploy.ps1; the portable/non-admin package only
     # ever has portable-deploy.ps1 (build-portable.ps1 doesn't copy the
     # admin one over) - use whichever is actually present so this one
