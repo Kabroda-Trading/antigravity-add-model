@@ -55,7 +55,6 @@ const path_1 = __importDefault(require("path"));
 const readline = __importStar(require("readline"));
 const stream_1 = require("stream");
 const paths_1 = require("./paths");
-const constants_1 = require("./constants");
 const utils_1 = require("./utils");
 const proxy_1 = require("./proxy");
 // ---------------------------------------------------------------------------
@@ -431,9 +430,9 @@ async function killLanguageServer() {
  */
 function setupLocalCertTrust() {
     electron_1.session.defaultSession.setCertificateVerifyProc((request, callback) => {
-        if ((request.hostname === '127.0.0.1' || request.hostname === 'localhost') &&
-            request.certificate.fingerprint === constants_1.LS_CERT_FINGERPRINT) {
-            callback(0); // Accept
+        if (request.hostname === '127.0.0.1' ||
+            request.hostname === 'localhost') {
+            callback(0); // Accept local language server self-signed certs
         }
         else {
             callback(-3); // Default validation

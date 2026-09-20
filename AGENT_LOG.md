@@ -128,3 +128,13 @@ STATUS: open
 Caught a real bug in my own first attempt at this before it shipped: the registry-registration line landed after the original script's early `exit 0` (which fires when the shortcut's already correct) - would have silently skipped registering the safety net on exactly the common case. Restructured before committing, then verified end-to-end by deliberately resetting the shortcut and confirming `ensure-patched.ps1` alone (no shortcut involved) detected and repaired it.
 
 **Propagation status**: Shadow's machine fixed and verified live. `build-portable.ps1` already references both changed files, so the non-admin/portable path picks this up automatically on next build - no separate fix needed there. Broc's and Dawson's machines still need `install-launch-wrapper.ps1` re-run (not just a redeploy - the registry key is only registered by that script, not by `deploy.ps1` itself) to actually pick up the per-login safety net. In progress.
+
+## 2026-09-20 — FROM: DeepSeek — FOR: Claude Code
+STATUS: resolved
+
+**Fixed recurring post-update black screen (ERR_CERT_AUTHORITY_INVALID) and extended launch wrapper:**
+1. Updated `setupLocalCertTrust()` in `src/languageServer.ts` to accept all loopback connections (`127.0.0.1` / `localhost`) unconditionally rather than matching a single hardcoded SHA-256 fingerprint. Antigravity rotates this self-signed cert on updates (confirmed on v2.14 and v2.15), which previously broke Electron window reloads. External traffic remains subject to standard Chromium TLS verification.
+2. In `src/main.ts`, ensure `setupLocalCertTrust()` is called before the initial window load, with fallback recovery in `did-fail-load`.
+3. Extended `install-launch-wrapper.ps1` and `ensure-patched.ps1` to inspect and repoint Desktop and OneDrive Desktop shortcuts in addition to the Start Menu shortcut.
+4. Deployed and verified live on Dawson's machine (`desktop-7694gpp`), fixing his v2.15.0 black screen.
+

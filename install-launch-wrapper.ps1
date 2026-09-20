@@ -13,35 +13,44 @@
 # only touching your own user Start Menu shortcut and your own per-user
 # registry Run key, not machine-wide settings).
 
-$ShortcutPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Antigravity.lnk"
+$ShortcutLocations = @(
+    "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Antigravity.lnk",
+    "$env:USERPROFILE\Desktop\Antigravity.lnk",
+    "$env:USERPROFILE\OneDrive\Desktop\Antigravity.lnk"
+)
 $WrapperPath = Join-Path $PSScriptRoot "launch-antigravity.bat"
+$sh = New-Object -ComObject WScript.Shell
 
-if (-not (Test-Path $ShortcutPath)) {
-    Write-Host "WARNING: Could not find the Antigravity Start Menu shortcut at:" -ForegroundColor Yellow
-    Write-Host "  $ShortcutPath" -ForegroundColor Yellow
-    Write-Host "If Antigravity is pinned/launched some other way, that launch path won't get the auto-check - the per-login safety net below still covers it." -ForegroundColor Yellow
-} else {
-    $sh = New-Object -ComObject WScript.Shell
-    $lnk = $sh.CreateShortcut($ShortcutPath)
+$foundAny = $false
+foreach ($ShortcutPath in $ShortcutLocations) {
+    if (Test-Path $ShortcutPath) {
+        $foundAny = $true
+        $lnk = $sh.CreateShortcut($ShortcutPath)
 
-    if ($lnk.TargetPath -eq $WrapperPath) {
-        Write-Host "Shortcut already points at the wrapper - nothing to do." -ForegroundColor Green
-    } else {
-        $originalTarget = $lnk.TargetPath
-        $iconLocation = $lnk.IconLocation
-        if (-not $iconLocation -or $iconLocation -eq ",0") {
-            $iconLocation = "$originalTarget,0"
+        if ($lnk.TargetPath -eq $WrapperPath) {
+            Write-Host "Shortcut already points at the wrapper ($ShortcutPath)." -ForegroundColor Green
+        } else {
+            $originalTarget = $lnk.TargetPath
+            $iconLocation = $lnk.IconLocation
+            if (-not $iconLocation -or $iconLocation -eq ",0") {
+                $iconLocation = "$originalTarget,0"
+            }
+
+            $lnk.TargetPath = $WrapperPath
+            $lnk.IconLocation = $iconLocation
+            $lnk.WorkingDirectory = Split-Path $originalTarget -Parent
+            $lnk.Save()
+
+            Write-Host "Done - repointed shortcut to wrapper ($ShortcutPath)." -ForegroundColor Green
+            Write-Host "  Was: $originalTarget" -ForegroundColor Gray
+            Write-Host "  Now: $WrapperPath" -ForegroundColor Gray
         }
-
-        $lnk.TargetPath = $WrapperPath
-        $lnk.IconLocation = $iconLocation
-        $lnk.WorkingDirectory = Split-Path $originalTarget -Parent
-        $lnk.Save()
-
-        Write-Host "Done - the Start Menu shortcut now checks the patch before opening Antigravity." -ForegroundColor Green
-        Write-Host "  Was: $originalTarget" -ForegroundColor Gray
-        Write-Host "  Now: $WrapperPath" -ForegroundColor Gray
     }
+}
+
+if (-not $foundAny) {
+    Write-Host "WARNING: Could not find any standard Antigravity shortcuts." -ForegroundColor Yellow
+    Write-Host "If Antigravity is pinned/launched some other way, that launch path won't get the auto-check - the per-login safety net below still covers it." -ForegroundColor Yellow
 }
 
 # ─── Independent per-login safety net ────────────────────────────────────────

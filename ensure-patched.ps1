@@ -53,33 +53,31 @@ if (-not $geminiHealthy -and (Test-Path $GeminiRulesBackup)) {
     Copy-Item $GeminiRules $GeminiRulesBackup -Force
 }
 
-# ─── Protect the Start Menu shortcut from being silently reset ───────────────
-# Confirmed happening in practice: an Antigravity update reset the Start Menu
-# shortcut back to pointing directly at Antigravity.exe, undoing
-# install-launch-wrapper.ps1's repoint. Because this script only used to run
-# *via* that shortcut, the reset was self-defeating - once the shortcut broke,
-# nothing ever ran again to notice or fix it, silently, for as long as the
-# user kept opening Antigravity through the same broken shortcut. Fixed by
-# calling this script from an independent per-login trigger too (see
-# install-launch-wrapper.ps1's registry Run-key registration) that doesn't
-# depend on the shortcut being correct in the first place - this section is
-# what that independent trigger actually repairs.
-$ShortcutPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Antigravity.lnk"
+# ─── Protect shortcuts from being silently reset ─────────────────────────────
+# Checks Start Menu, Desktop, and OneDrive Desktop shortcuts so launching
+# from any standard location runs through launch-antigravity.bat.
 $WrapperPath = Join-Path $PSScriptRoot "launch-antigravity.bat"
+$ShortcutLocations = @(
+    "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Antigravity.lnk",
+    "$env:USERPROFILE\Desktop\Antigravity.lnk",
+    "$env:USERPROFILE\OneDrive\Desktop\Antigravity.lnk"
+)
 
-if (Test-Path $ShortcutPath) {
-    $sh = New-Object -ComObject WScript.Shell
-    $lnk = $sh.CreateShortcut($ShortcutPath)
-    if ($lnk.TargetPath -ne $WrapperPath) {
-        $originalTarget = $lnk.TargetPath
-        $iconLocation = $lnk.IconLocation
-        if (-not $iconLocation -or $iconLocation -eq ",0") {
-            $iconLocation = "$originalTarget,0"
+$sh = New-Object -ComObject WScript.Shell
+foreach ($scPath in $ShortcutLocations) {
+    if (Test-Path $scPath) {
+        $lnk = $sh.CreateShortcut($scPath)
+        if ($lnk.TargetPath -ne $WrapperPath) {
+            $originalTarget = $lnk.TargetPath
+            $iconLocation = $lnk.IconLocation
+            if (-not $iconLocation -or $iconLocation -eq ",0") {
+                $iconLocation = "$originalTarget,0"
+            }
+            $lnk.TargetPath = $WrapperPath
+            $lnk.IconLocation = $iconLocation
+            $lnk.WorkingDirectory = Split-Path $originalTarget -Parent
+            $lnk.Save()
+            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Shortcut at '$scPath' was reset to '$originalTarget' (likely by an Antigravity update/reinstall) - repointed back to the launch wrapper." | Out-File $log -Append
         }
-        $lnk.TargetPath = $WrapperPath
-        $lnk.IconLocation = $iconLocation
-        $lnk.WorkingDirectory = Split-Path $originalTarget -Parent
-        $lnk.Save()
-        "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Start Menu shortcut was reset to '$originalTarget' (likely by an Antigravity update/reinstall) - repointed back to the launch wrapper." | Out-File $log -Append
     }
 }

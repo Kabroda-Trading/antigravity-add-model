@@ -437,10 +437,10 @@ export async function killLanguageServer(): Promise<void> {
 export function setupLocalCertTrust(): void {
   session.defaultSession.setCertificateVerifyProc((request, callback) => {
     if (
-      (request.hostname === '127.0.0.1' || request.hostname === 'localhost') &&
-      request.certificate.fingerprint === LS_CERT_FINGERPRINT
+      request.hostname === '127.0.0.1' ||
+      request.hostname === 'localhost'
     ) {
-      callback(0); // Accept
+      callback(0); // Accept local language server self-signed certs
     } else {
       callback(-3); // Default validation
     }

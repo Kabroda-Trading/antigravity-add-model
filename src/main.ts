@@ -229,6 +229,19 @@ app
       return;
     }
 
+    // Apply cert trust for the local self-signed connection before any window
+    // loads it. Previously this was only ever (re-)applied inside
+    // onPortChanged (an auto-restart scenario) - a completely normal startup
+    // never called it at all. That gap was masked as long as the forced
+    // "reload once to refresh models" below happened to succeed anyway, but
+    // surfaced as a black screen (ERR_CERT_AUTHORITY_INVALID on the reload,
+    // even though the very first load somehow still worked) the moment
+    // whatever made that incidentally work stopped holding - confirmed
+    // happening after an Antigravity update. Calling it here covers the
+    // initial load and the forced reload consistently, not just a later
+    // port change.
+    setupLocalCertTrust();
+
     const url = `${WINDOW_ORIGIN}:${handle.port}/`;
     console.log('\n' + '='.repeat(60));
     console.log(`  Local:       ${url}`);
@@ -257,11 +270,24 @@ app
     if (!HEADLESS) {
       setupApplicationMenu(url);
       const mainWindow = createWindow(url);
-      // Force a single reload after initial load to ensure fresh model list
+      // Force a single reload after initial load to ensure fresh model list.
+      // Safety net: if this specific reload ever fails (cert issue or
+      // otherwise), fall back to re-loading the known-good url directly
+      // instead of leaving the window on whatever broken/blank state the
+      // failed navigation left behind - a black screen with no recovery path
+      // is worse than skipping the model-list refresh for this one launch.
       mainWindow.webContents.once('did-finish-load', () => {
         console.log('[Startup] Initial page loaded. Reloading once to refresh models...');
         setTimeout(() => {
           if (!mainWindow.isDestroyed()) {
+            mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+              console.warn(
+                `[Startup] Reload failed (${errorCode} ${errorDescription}) - falling back to the original URL instead of leaving the window blank.`,
+              );
+              if (!mainWindow.isDestroyed()) {
+                void mainWindow.loadURL(url);
+              }
+            });
             (mainWindow.webContents as any).reload();
           }
         }, 500);

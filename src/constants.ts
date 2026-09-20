@@ -2,4 +2,18 @@
 export const DYNAMIC_PORT = 0;
 export const LS_LOG_FILE_NAME = 'language_server.log';
 export const WINDOW_ORIGIN = 'https://127.0.0.1';
-export const LS_CERT_FINGERPRINT = 'sha256/sTZpQemOWEytaZqa7P/y/dNXbHMdOAzMvzHEhUwHZXw=';
+// Antigravity's local language-server HTTPS cert fingerprint. This is
+// stable across launches (Antigravity's own architecture assumes a fixed
+// cert - hardcoding it at all only makes sense on that assumption) but
+// rotates when Google updates the app. Confirmed happening in practice:
+// this value went stale on the v2.14.0 update, which caused every window
+// load past the initial one to fail with ERR_CERT_AUTHORITY_INVALID and
+// leave a black screen with no recovery path. Re-captured 2026-09-16
+// directly from the live language server's TLS certificate. If this ever
+// goes stale again, capture the current one the same way: connect to the
+// port Antigravity prints at startup ("Local: https://127.0.0.1:<port>/")
+// with an SslStream, read RemoteCertificate, and SHA-256 it.
+// TODO: read this from the LS's own cert file dynamically instead of
+// hardcoding it, so an Antigravity update can't silently invalidate this
+// again - see setupLocalCertTrust() in languageServer.ts.
+export const LS_CERT_FINGERPRINT = 'sha256/+Lur1Xot/zKZLyBe3oQfm6jZXN9FmC4dDnOqWDTpz5Q=';
