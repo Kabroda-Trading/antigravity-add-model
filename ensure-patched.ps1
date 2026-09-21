@@ -21,13 +21,26 @@ if ($needsPatch) {
     $AsarPath = "$env:LOCALAPPDATA\Programs\antigravity\resources\app.asar"
 
     if ((Test-Path $StagedAsar) -and (Test-Path $StagedLs)) {
-        try {
-            Move-Item $StagedAsar $AsarPath -Force -ErrorAction Stop
-            Move-Item $StagedLs $LsBinary -Force -ErrorAction Stop
-            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Applied pre-staged patch files instantly." | Out-File $log -Append
-            $needsPatch = $false
-        } catch {
-            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Staged swap failed ($($_.Exception.Message)), falling back to deploy script..." | Out-File $log -Append
+        # Staged files are built for ONE specific Antigravity version. Swapping
+        # them over a different version's install mixes versions - the exact
+        # black-screen failure deploy.ps1's version guard exists to prevent -
+        # and Antigravity updates land every few days, so leftover staged files
+        # from the previous version would get blindly installed on the next
+        # update. The patch is length-preserving, so a staged language_server.exe
+        # built for THIS install is exactly the same size as the installed
+        # (unpatched) one; a different version's binary practically never is.
+        $stagedCompatible = (Test-Path $LsBinary) -and ((Get-Item $StagedLs).Length -eq (Get-Item $LsBinary).Length)
+        if (-not $stagedCompatible) {
+            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Ignoring stale staged files (built for a different Antigravity version than the one installed) - using the deploy script instead." | Out-File $log -Append
+        } else {
+            try {
+                Move-Item $StagedAsar $AsarPath -Force -ErrorAction Stop
+                Move-Item $StagedLs $LsBinary -Force -ErrorAction Stop
+                "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Applied pre-staged patch files instantly." | Out-File $log -Append
+                $needsPatch = $false
+            } catch {
+                "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Staged swap failed ($($_.Exception.Message)), falling back to deploy script..." | Out-File $log -Append
+            }
         }
     }
 }

@@ -151,7 +151,19 @@ if (Test-Path $LsBinary) {
 Write-Host "[7/7] Antigravity baslatiliyor..." -ForegroundColor Yellow
 $ExePath = "$env:LOCALAPPDATA\Programs\antigravity\Antigravity.exe"
 if (Test-Path $ExePath) {
+    # Terminals hosted inside another Electron app (VS Code, Claude Code, even
+    # Antigravity's own agent terminal) inherit ELECTRON_RUN_AS_NODE=1 from it.
+    # Left set, Antigravity.exe silently runs as plain Node and exits instantly
+    # (exit 0, no window, no log) - while this script cheerfully printed
+    # "restarted" below. Confirmed happening: a redeploy from a VS Code-hosted
+    # shell reported success but never actually opened Antigravity.
+    Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
     Start-Process -FilePath $ExePath
+    Start-Sleep -Seconds 5
+    if (-not (Get-Process -Name "Antigravity" -ErrorAction SilentlyContinue)) {
+        Write-Host "  UYARI: Antigravity baslatildi ama calismiyor gorunuyor - elle acin." -ForegroundColor Yellow
+        Write-Host "  (Warning: launched, but no Antigravity process is running - open it manually.)" -ForegroundColor Yellow
+    }
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Cyan
     Write-Host "  BASARILI! Antigravity yeniden basladi." -ForegroundColor Green

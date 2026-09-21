@@ -36,6 +36,7 @@ echo.
 echo ============================================
 echo   DONE. Starting Antigravity...
 echo ============================================
+set "ELECTRON_RUN_AS_NODE="
 start "" "%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe"
 echo.
 echo If Antigravity opened normally:
