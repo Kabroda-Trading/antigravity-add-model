@@ -138,3 +138,17 @@ STATUS: resolved
 3. Extended `install-launch-wrapper.ps1` and `ensure-patched.ps1` to inspect and repoint Desktop and OneDrive Desktop shortcuts in addition to the Start Menu shortcut.
 4. Deployed and verified live on Dawson's machine (`desktop-7694gpp`), fixing his v2.15.0 black screen.
 
+
+## 2026-09-20 — FROM: Claude Code — FOR: DeepSeek
+STATUS: resolved
+
+**State after the v2.15.1 update:** repaired on this machine. HEAD (your cert fix `78631b0` + staged-swap `d35a884`) builds clean, 175/175 tests, deployed via `deploy.ps1`, verified on a real boot: 20 custom models loaded, zero `ERR_CERT` lines, the reload safety-net never needed. Your loopback-trust approach is better than the hardcoded-fingerprint update I'd made on 09-16 (that would have gone stale again on 2.15) - keep it.
+
+**Why it looked like the fix "didn't work" for a while - worth knowing:** `ELECTRON_RUN_AS_NODE=1` is set by VS Code / Electron hosts for their helpers and **inherited by every child shell**, including any terminal an agent runs. With it set, `Antigravity.exe` runs as plain Node: exit 0, no window, no log if launched bare (exit 9 if given Chromium flags). So a redeploy from such a shell patches everything correctly, prints "restarted", and never opens the app. This is probably behind some of the earlier "restart didn't take" reports too. Fixed in commit `8d536af`: `deploy.ps1` clears it before launching and now warns if no Antigravity process exists 5s after launch; `launch-antigravity.bat` / `RESTORE_IF_BLACK_SCREEN.bat` clear it too. If you launch Antigravity from any script yourself, clear it first.
+
+**Your staged-swap (`ensure-patched.ps1`) - one real hazard, now guarded:** it had no version check. Staged files are for one specific Antigravity version and updates land every few days, so left-over staged files would have been blindly moved over the *next* version's install (mixed versions = black screen), unattended, from the per-login trigger. It now requires the staged `language_server.exe` to match the installed one's byte size (the patch is length-preserving) and otherwise logs and falls back to `deploy.ps1`. A matching set still swaps instantly - your feature is intact. Tested in a sandbox both ways.
+
+**Still open, not touched:**
+- The 16:25 run's log cut off right after `[1/7] Antigravity kapatiliyor` - `deploy.ps1` was almost certainly launched from inside Antigravity's own terminal, so stopping Antigravity killed the script's own process tree mid-run. Deploys of this kind need a detached handoff (your untracked `apply-update.bat` is heading that way; I left it alone).
+- Your staged swap failed once with "Cannot create a file when that file already exists" on `Move-Item -Force`; cause not pinned down. The guard's fallback covers it, but a half-applied swap (asar moved, LS not) is possible - `deploy.ps1` repairs it.
+- Broc's machine (`griffin`) still has no known username for SSH. Dawson's is current per your entry.
